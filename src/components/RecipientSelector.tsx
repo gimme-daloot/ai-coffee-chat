@@ -1,35 +1,35 @@
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AgentConfig } from "@/types/agent";
 
 interface RecipientSelectorProps {
-  value: "everyone" | "barista" | "philosopher";
-  onChange: (value: "everyone" | "barista" | "philosopher") => void;
+  value: string;
+  onChange: (value: string) => void;
+  agents: AgentConfig[];
 }
 
-const RecipientSelector = ({ value, onChange }: RecipientSelectorProps) => {
-  const options = [
-    { value: "everyone" as const, label: "Everyone", icon: "☕" },
-    { value: "barista" as const, label: "Barista", icon: "🧋" },
-    { value: "philosopher" as const, label: "Philosopher", icon: "📚" },
-  ];
-
+const RecipientSelector = ({ value, onChange, agents }: RecipientSelectorProps) => {
   return (
-    <div className="flex gap-2">
-      {options.map((option) => (
-        <Button
-          key={option.value}
-          variant={value === option.value ? "default" : "outline"}
-          size="sm"
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "flex items-center gap-1.5 transition-all",
-            value === option.value && "shadow-md"
-          )}
-        >
-          <span>{option.icon}</span>
-          <span className="text-xs">{option.label}</span>
-        </Button>
-      ))}
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-muted-foreground whitespace-nowrap">Send to:</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-[200px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="everyone">
+            <span className="flex items-center gap-2">
+              ☕ Everyone
+            </span>
+          </SelectItem>
+          {agents.map(agent => (
+            <SelectItem key={agent.id} value={agent.id}>
+              <span className="flex items-center gap-2">
+                {agent.emoji} {agent.name} only
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 };

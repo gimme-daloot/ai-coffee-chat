@@ -1,29 +1,31 @@
 import { useState, useRef, useEffect } from "react";
+import { Send, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import MessageBubble from "./MessageBubble";
 import RecipientSelector from "./RecipientSelector";
-import { Send, Settings } from "lucide-react";
 import SettingsModal from "./SettingsModal";
-
-interface Message {
-  id: string;
-  sender: "user" | "barista" | "philosopher";
-  content: string;
-  recipient?: "everyone" | "barista" | "philosopher";
-  timestamp: Date;
-}
+import { useToast } from "@/hooks/use-toast";
+import { AgentConfig, Message } from "@/types/agent";
+import { callAgent, ApiError } from "@/lib/apiClients";
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [recipient, setRecipient] = useState<"everyone" | "barista" | "philosopher">("everyone");
+  const [recipient, setRecipient] = useState<string>("everyone");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [agents, setAgents] = useState<AgentConfig[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Load agents from localStorage
+    const storedAgents = localStorage.getItem("coffeehouse-agents");
+    if (storedAgents) {
+      setAgents(JSON.parse(storedAgents));
+    }
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -33,175 +35,188 @@ const ChatInterface = () => {
     scrollToBottom();
   }, [messages]);
 
-  const callAI = async (agent: "barista" | "philosopher", conversationHistory: Message[]) => {
-    const agentMessages = conversationHistory.map(msg => ({
-      role: msg.sender === agent ? "assistant" : "user",
-      content: msg.content,
-    }));
-
-    const { data, error } = await supabase.functions.invoke("ai-chat", {
-      body: { messages: agentMessages, agent },
-    });
-
-    if (error) throw error;
-    return data.choices[0].message.content;
+  const addMessage = (sender: string, recipient: string, content: string) => {
+    const newMessage: Message = {
+      id: Date.now().toString(),
+      sender,
+      recipient,
+      content,
+      timestamp: Date.now(),
+    };
+    setMessages(prev => [...prev, newMessage]);
+    return newMessage;
   };
 
-  const handleSend = async () => {
+  const getAgentResponse = async (agent: AgentConfig, currentMessages: Message[]) => {
+    try {
+      const response = await callAgent(agent, currentMessages);
+      return response;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast({
+          title: `${agent.name} Error`,
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: `${agent.name} Error`,
+          description: "Failed to get response. Please check your API key and try again.",
+          variant: "destructive",
+        });
+      }
+      throw error;
+    }
+  };
+
+  const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      sender: "user",
-      content: input.trim(),
-      recipient,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    const userMessage = input.trim();
     setInput("");
     setIsLoading(true);
 
+    // Add user message
+    addMessage("user", recipient, userMessage);
+    let currentMessages = [...messages, { 
+      id: Date.now().toString(), 
+      sender: "user", 
+      recipient, 
+      content: userMessage,
+      timestamp: Date.now()
+    }];
+
     try {
-      const conversationHistory = [...messages, userMessage];
-
-      // Determine which agents should respond
-      const shouldBaristaRespond = recipient === "everyone" || recipient === "barista";
-      const shouldPhilosopherRespond = recipient === "everyone" || recipient === "philosopher";
-
-      // Barista responds first (if applicable)
-      if (shouldBaristaRespond) {
-        const baristaResponse = await callAI("barista", conversationHistory);
-        const baristaMessage: Message = {
-          id: Date.now().toString() + "-barista",
-          sender: "barista",
-          content: baristaResponse,
-          timestamp: new Date(),
-        };
-        conversationHistory.push(baristaMessage);
-        setMessages(prev => [...prev, baristaMessage]);
+      if (recipient === "everyone") {
+        // Both agents respond in sequence
+        for (const agent of agents) {
+          const response = await getAgentResponse(agent, currentMessages);
+          const agentMessage = addMessage(agent.id, "everyone", response);
+          currentMessages = [...currentMessages, agentMessage];
+          
+          // Small delay between responses for natural flow
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } else {
+        // Only the selected agent responds
+        const targetAgent = agents.find(a => a.id === recipient);
+        if (targetAgent) {
+          const response = await getAgentResponse(targetAgent, currentMessages);
+          addMessage(targetAgent.id, "everyone", response);
+        }
       }
-
-      // Philosopher responds (if applicable)
-      if (shouldPhilosopherRespond) {
-        const philosopherResponse = await callAI("philosopher", conversationHistory);
-        const philosopherMessage: Message = {
-          id: Date.now().toString() + "-philosopher",
-          sender: "philosopher",
-          content: philosopherResponse,
-          timestamp: new Date(),
-        };
-        conversationHistory.push(philosopherMessage);
-        setMessages(prev => [...prev, philosopherMessage]);
-      }
-
-      // If both agents responded, let them have one exchange
-      if (shouldBaristaRespond && shouldPhilosopherRespond) {
-        // Barista responds to Philosopher
-        const baristaFollowup = await callAI("barista", conversationHistory);
-        const baristaFollowupMessage: Message = {
-          id: Date.now().toString() + "-barista-followup",
-          sender: "barista",
-          content: baristaFollowup,
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, baristaFollowupMessage]);
-      }
-    } catch (error: any) {
-      console.error("Error sending message:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to send message. Please try again.",
-        variant: "destructive",
-      });
+    } catch (error) {
+      console.error("Error getting AI response:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSendMessage();
     }
   };
 
+  const getAgentInfo = (agentId: string) => {
+    return agents.find(a => a.id === agentId);
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-background via-muted to-secondary">
       {/* Header */}
-      <header className="bg-card border-b border-border px-6 py-4 shadow-sm">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-primary">☕ AI Coffeehouse</h1>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowSettings(true)}
-            className="hover:bg-muted"
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
+      <header className="bg-card border-b border-border shadow-sm p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">☕ AI Coffeehouse</h1>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setShowSettings(true)}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Settings className="h-5 w-5" />
+        </Button>
       </header>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-4xl mx-auto space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center py-12 space-y-4">
-              <p className="text-lg text-muted-foreground">
-                Welcome to the Coffeehouse! Start a conversation below.
-              </p>
-              <div className="flex gap-4 justify-center">
-                <div className="text-center">
-                  <span className="text-4xl">🧋</span>
-                  <p className="text-sm text-barista font-medium mt-1">Barista</p>
-                </div>
-                <div className="text-center">
-                  <span className="text-4xl">📚</span>
-                  <p className="text-sm text-philosopher font-medium mt-1">Philosopher</p>
-                </div>
-              </div>
-            </div>
-          )}
-          {messages.map((message) => (
-            <MessageBubble key={message.id} {...message} />
-          ))}
-          {isLoading && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <div className="animate-pulse">💭</div>
-              <span className="text-sm">Thinking...</span>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && (
+          <div className="text-center text-muted-foreground mt-12">
+            <p className="text-lg mb-2">Welcome to the Coffeehouse! ☕</p>
+            <p className="text-sm">Start a conversation with your AI agents</p>
+          </div>
+        )}
+        
+        {messages.map((message) => {
+          const agent = message.sender !== 'user' ? getAgentInfo(message.sender) : null;
+          return (
+            <MessageBubble
+              key={message.id}
+              sender={message.sender === 'user' ? 'You' : (agent?.name || message.sender)}
+              content={message.content}
+              type={message.sender === 'user' ? 'user' : (agent?.color || 'user')}
+              emoji={message.sender === 'user' ? '🧍' : (agent?.emoji || '🤖')}
+              isWhisper={message.recipient !== 'everyone'}
+              whisperTarget={message.recipient !== 'everyone' && message.sender === 'user' 
+                ? getAgentInfo(message.recipient)?.name 
+                : undefined}
+            />
+          );
+        })}
+        
+        {isLoading && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="animate-pulse">💭</div>
+            <span className="text-sm">Thinking...</span>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border bg-card/50 backdrop-blur-sm px-4 py-4 shadow-lg">
-        <div className="max-w-4xl mx-auto space-y-3">
-          <RecipientSelector value={recipient} onChange={setRecipient} />
-          <div className="flex gap-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
-              className="min-h-[60px] resize-none bg-background"
-              disabled={isLoading}
-            />
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              size="icon"
-              className="h-[60px] w-[60px] shrink-0"
-            >
-              <Send className="h-5 w-5" />
-            </Button>
-          </div>
+      <div className="bg-card border-t border-border p-4 space-y-3">
+        <RecipientSelector
+          value={recipient}
+          onChange={setRecipient}
+          agents={agents}
+        />
+        
+        <div className="flex gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder={
+              recipient === "everyone" 
+                ? "Message everyone..." 
+                : `Whisper to ${getAgentInfo(recipient)?.name}...`
+            }
+            className="min-h-[80px] resize-none"
+            disabled={isLoading}
+          />
+          <Button
+            onClick={handleSendMessage}
+            disabled={!input.trim() || isLoading}
+            size="icon"
+            className="self-end h-[80px] w-[80px]"
+          >
+            <Send className="h-5 w-5" />
+          </Button>
         </div>
       </div>
 
-      <SettingsModal open={showSettings} onOpenChange={setShowSettings} />
+      <SettingsModal 
+        open={showSettings} 
+        onOpenChange={setShowSettings}
+        agents={agents}
+        onAgentsChange={(newAgents) => {
+          setAgents(newAgents);
+          localStorage.setItem("coffeehouse-agents", JSON.stringify(newAgents));
+        }}
+      />
     </div>
   );
 };
