@@ -12,6 +12,17 @@ export class ApiError extends Error {
   }
 }
 
+function getLocalModeConfig(): { enabled: boolean; baseUrl?: string } {
+  try {
+    if (typeof window === 'undefined') return { enabled: false };
+    const enabled = localStorage.getItem('coffeehouse-local-mode') === 'true';
+    const baseUrl = localStorage.getItem('coffeehouse-ollama-base-url') || undefined;
+    return { enabled, baseUrl };
+  } catch {
+    return { enabled: false };
+  }
+}
+
 function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMessage[] {
   return messages
     .filter(msg => {
@@ -57,6 +68,47 @@ export async function callOpenAI(
 
   const data = await response.json();
   return data.choices[0].message.content;
+}
+
+export async function callOllama(
+  agent: AgentConfig,
+  messages: Message[]
+): Promise<string> {
+  const apiMessages = convertMessagesToApiFormat(messages, agent.id);
+
+  // Ollama default base URL
+  const baseUrl = agent.baseUrl?.replace(/\/$/, '') || 'http://localhost:11434';
+
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: agent.model,
+      messages: [
+        { role: 'system', content: agent.personality },
+        ...apiMessages,
+      ],
+      stream: false,
+      options: {
+        temperature: 0.9,
+        num_ctx: 4096,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new ApiError(
+      errorText || `Ollama API error: ${response.status}`,
+      response.status
+    );
+  }
+
+  const data = await response.json();
+  // Ollama returns { message: { content: string } }
+  return data?.message?.content || '';
 }
 
 export async function callAnthropic(
@@ -174,6 +226,20 @@ export async function callAgent(
   agent: AgentConfig,
   messages: Message[]
 ): Promise<string> {
+  const { enabled: localModeEnabled, baseUrl: localModeBaseUrl } = getLocalModeConfig();
+  if (localModeEnabled && agent.provider !== 'ollama') {
+    // Route all providers through Ollama when local mode is enabled
+    const ollamaAgent: AgentConfig = {
+      ...agent,
+      provider: 'ollama',
+      // If user set agent-specific baseUrl, prefer it; otherwise use global local mode baseUrl
+      baseUrl: agent.baseUrl || localModeBaseUrl,
+      // Model can remain as-is; Ollama will error if unsupported. Prefer a common default.
+      model: (typeof agent.model === 'string' ? agent.model : 'llama3') as any,
+      apiKey: '',
+    };
+    return callOllama(ollamaAgent, messages);
+  }
   switch (agent.provider) {
     case 'openai':
       return callOpenAI(agent, messages);
@@ -183,6 +249,8 @@ export async function callAgent(
       return callGoogle(agent, messages);
     case 'xai':
       return callXAI(agent, messages);
+    case 'ollama':
+      return callOllama(agent, messages);
     default:
       throw new ApiError(`Unsupported provider: ${agent.provider}`);
   }

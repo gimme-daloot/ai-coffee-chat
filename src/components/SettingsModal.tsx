@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import ApiKeySetup from "./ApiKeySetup";
 import { AgentConfig } from "@/types/agent";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 interface SettingsModalProps {
   open: boolean;
@@ -33,19 +35,23 @@ const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsM
   };
 
   const handleSave = () => {
-    // Validate that all agents have API keys
-    const missingKeys = editedAgents.filter(agent => !agent.apiKey.trim());
+    // Validate that all agents have API keys except Ollama
+    const missingKeys = editedAgents.filter(agent => agent.provider !== 'ollama' && !agent.apiKey.trim());
     
     if (missingKeys.length > 0) {
       toast({
         title: "Missing API Keys",
-        description: "Please provide API keys for all agents.",
+        description: "Please provide API keys for all non-local providers.",
         variant: "destructive",
       });
       return;
     }
 
     onAgentsChange(editedAgents);
+    // Persist local mode settings if present
+    try {
+      // no-op; values already saved via onChange handlers below
+    } catch {}
     toast({
       title: "Settings Saved",
       description: "Your agent configurations have been updated.",
@@ -100,10 +106,39 @@ const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsM
             </div>
 
             <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Local Mode</h3>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-sm text-muted-foreground">Route all providers to local Ollama</span>
+                <Switch
+                  checked={typeof window !== 'undefined' && localStorage.getItem('coffeehouse-local-mode') === 'true'}
+                  onCheckedChange={(checked) => {
+                    try {
+                      localStorage.setItem('coffeehouse-local-mode', checked ? 'true' : 'false');
+                    } catch {}
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="local-ollama-base-url" className="text-sm">Local Ollama Base URL</label>
+                <Input
+                  id="local-ollama-base-url"
+                  placeholder="http://localhost:11434"
+                  defaultValue={typeof window !== 'undefined' ? (localStorage.getItem('coffeehouse-ollama-base-url') || '') : ''}
+                  onChange={(e) => {
+                    try {
+                      localStorage.setItem('coffeehouse-ollama-base-url', e.target.value);
+                    } catch {}
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">Used when Local Mode is enabled or for Ollama providers without a custom base URL.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <h3 className="text-sm font-semibold">Privacy</h3>
               <p className="text-sm text-muted-foreground">
-                Your API keys are stored locally in your browser and never sent to our servers. 
-                All AI requests go directly from your browser to your chosen AI providers.
+                Your API keys are stored locally in your browser and never sent to our servers.
+                Requests are sent directly from your browser to your chosen providers. For Ollama, requests go to your local endpoint.
               </p>
             </div>
 

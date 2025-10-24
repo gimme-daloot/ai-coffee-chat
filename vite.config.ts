@@ -8,6 +8,14 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      // Proxy to local Ollama to avoid CORS in development
+      "/ollama": {
+        target: "http://localhost:11434",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/ollama/, ""),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

@@ -23,13 +23,13 @@ const OnboardingScreen = ({ onComplete }: OnboardingScreenProps) => {
   };
 
   const handleStart = () => {
-    // Validate that all agents have API keys
-    const missingKeys = agents.filter(agent => !agent.apiKey.trim());
+    // Validate that all agents have API keys unless provider is Ollama
+    const missingKeys = agents.filter(agent => agent.provider !== 'ollama' && !agent.apiKey.trim());
     
     if (missingKeys.length > 0) {
       toast({
         title: "Missing API Keys",
-        description: "Please provide API keys for all agents before continuing.",
+        description: "Please provide API keys for all non-local providers before continuing.",
         variant: "destructive",
       });
       return;

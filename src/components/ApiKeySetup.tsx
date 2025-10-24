@@ -96,17 +96,32 @@ const ApiKeySetup = ({ agent, onChange }: ApiKeySetupProps) => {
             type={showKey ? "text" : "password"}
             value={agent.apiKey}
             onChange={(e) => onChange({ ...agent, apiKey: e.target.value })}
-            placeholder={`Enter ${PROVIDER_LABELS[agent.provider]} API key`}
+            placeholder={`Enter ${PROVIDER_LABELS[agent.provider]} API key${agent.provider === 'ollama' ? ' (not required)' : ''}`}
+            disabled={agent.provider === 'ollama'}
           />
           <button
             type="button"
             onClick={() => setShowKey(!showKey)}
             className="px-3 text-sm text-muted-foreground hover:text-foreground"
+            disabled={agent.provider === 'ollama'}
           >
             {showKey ? "Hide" : "Show"}
           </button>
         </div>
       </div>
+
+      {agent.provider === 'ollama' && (
+        <div className="space-y-2">
+          <Label htmlFor={`${agent.id}-base-url`}>Ollama Base URL</Label>
+          <Input
+            id={`${agent.id}-base-url`}
+            type="text"
+            value={agent.baseUrl || ''}
+            onChange={(e) => onChange({ ...agent, baseUrl: e.target.value })}
+            placeholder="http://localhost:11434"
+          />
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor={`${agent.id}-personality`}>Personality Prompt</Label>
