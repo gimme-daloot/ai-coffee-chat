@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { AgentConfig, ApiProvider, PROVIDER_MODELS, PROVIDER_LABELS, ModelType } from "@/types/agent";
+import { AgentConfig, ApiProvider, PROVIDER_MODELS, PROVIDER_LABELS, ModelType, DEFAULT_BASE_URLS } from "@/types/agent";
 
 interface ApiKeySetupProps {
   agent: AgentConfig;
@@ -88,15 +88,53 @@ const ApiKeySetup = ({ agent, onChange }: ApiKeySetupProps) => {
         </Select>
       </div>
 
+      {agent.model === 'custom' && agent.provider === 'ollama' && (
+        <div className="space-y-2">
+          <Label htmlFor={`${agent.id}-custom-model`}>Custom Model Name</Label>
+          <Input
+            id={`${agent.id}-custom-model`}
+            value={agent.customModel || ''}
+            onChange={(e) => onChange({ ...agent, customModel: e.target.value })}
+            placeholder="e.g., llama2, codellama, your-custom-model"
+          />
+          <p className="text-xs text-muted-foreground">
+            Enter the exact model name from Ollama (run `ollama list` to see available models)
+          </p>
+        </div>
+      )}
+
       <div className="space-y-2">
-        <Label htmlFor={`${agent.id}-key`}>API Key</Label>
+        <Label htmlFor={`${agent.id}-base-url`}>
+          Custom Base URL {agent.provider !== 'ollama' && '(Optional)'}
+        </Label>
+        <Input
+          id={`${agent.id}-base-url`}
+          value={agent.customBaseUrl || ''}
+          onChange={(e) => onChange({ ...agent, customBaseUrl: e.target.value })}
+          placeholder={DEFAULT_BASE_URLS[agent.provider]}
+        />
+        <p className="text-xs text-muted-foreground">
+          {agent.provider === 'ollama' 
+            ? 'Default: http://localhost:11434 (change if Ollama is running elsewhere)'
+            : 'Override the default API endpoint (useful for proxies or OpenAI-compatible servers)'}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${agent.id}-key`}>
+          API Key {agent.provider === 'ollama' && '(Not required for Ollama)'}
+        </Label>
         <div className="flex gap-2">
           <Input
             id={`${agent.id}-key`}
             type={showKey ? "text" : "password"}
             value={agent.apiKey}
             onChange={(e) => onChange({ ...agent, apiKey: e.target.value })}
-            placeholder={`Enter ${PROVIDER_LABELS[agent.provider]} API key`}
+            placeholder={
+              agent.provider === 'ollama' 
+                ? 'Not required (leave empty)' 
+                : `Enter ${PROVIDER_LABELS[agent.provider]} API key`
+            }
           />
           <button
             type="button"

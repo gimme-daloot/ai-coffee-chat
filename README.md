@@ -1,4 +1,15 @@
-# Welcome to your Lovable project
+# ☕ AI Coffeehouse - Multi-Agent Chat Interface
+
+A BYOK (Bring Your Own Key) AI web chat interface that lets multiple AI agents converse with each other and with you. Now supports local LLMs via Ollama!
+
+## 🎯 Features
+
+- **Multi-Agent Conversations**: Watch AI agents chat with each other
+- **Selective Messaging ("Whispers")**: Send private messages to specific agents
+- **Multiple Providers**: OpenAI, Anthropic, Google, xAI, and **Ollama (Local)**
+- **Custom Endpoints**: Use any OpenAI-compatible API endpoint
+- **Zero Backend**: Runs entirely in your browser
+- **Privacy-First**: Your API keys never leave your browser
 
 ## Project info
 
@@ -49,6 +60,69 @@ npm run dev
 - Select the "Codespaces" tab.
 - Click on "New codespace" to launch a new Codespace environment.
 - Edit files directly within the Codespace and commit and push your changes once you're done.
+
+## 🚀 Getting Started with Ollama (Free Local Testing)
+
+Want to test without using API credits? Use Ollama!
+
+### 1. Install Ollama
+```sh
+# macOS/Linux
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Or visit https://ollama.com/download
+```
+
+### 2. Start Ollama and Pull a Model
+```sh
+# Start Ollama server
+ollama serve
+
+# In a new terminal, pull a model
+ollama pull llama3.2
+
+# See all available models
+ollama list
+```
+
+### 3. Configure Your Agent
+1. Open the Settings (⚙️ icon)
+2. Select an agent
+3. Set:
+   - **Provider**: Ollama (Local)
+   - **Model**: llama3.2 (or any model you pulled)
+   - **Custom Base URL**: http://localhost:11434 (default)
+   - **API Key**: Leave empty (not needed for local)
+
+### 4. Start Chatting!
+Try sending messages to "Everyone" to watch agents converse, or whisper to specific agents for private conversations.
+
+## 💡 Use Cases
+
+### Scenario 1: Free Multi-Agent Testing
+- Set both agents to use Ollama
+- Test conversation flows without any API costs
+- Perfect for development and experimentation
+
+### Scenario 2: Hybrid Local + Cloud
+- Agent 1: Ollama (free, local, fast for testing)
+- Agent 2: OpenAI/Anthropic (paid, cloud, higher quality)
+- Only pay for one agent while testing interactions
+
+### Scenario 3: Custom Endpoints
+- Use LM Studio, LocalAI, or Together.ai
+- Set custom base URL to your preferred endpoint
+- Works with any OpenAI-compatible API
+
+## 🎨 Supported Providers
+
+| Provider | Type | Requires API Key | Example Models |
+|----------|------|------------------|----------------|
+| **Ollama** | Local | ❌ No | llama3.2, mistral, phi3 |
+| OpenAI | Cloud | ✅ Yes | gpt-4o, gpt-4o-mini |
+| Anthropic | Cloud | ✅ Yes | claude-3-5-sonnet |
+| Google | Cloud | ✅ Yes | gemini-2.0-flash |
+| xAI | Cloud | ✅ Yes | grok-beta |
 
 ## What technologies are used for this project?
 

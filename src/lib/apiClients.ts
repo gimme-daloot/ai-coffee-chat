@@ -1,8 +1,20 @@
-import { AgentConfig, Message } from '@/types/agent';
+import { AgentConfig, Message, DEFAULT_BASE_URLS } from '@/types/agent';
 
 interface ApiMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+}
+
+function getBaseUrl(agent: AgentConfig): string {
+  return agent.customBaseUrl || DEFAULT_BASE_URLS[agent.provider];
+}
+
+function getModelName(agent: AgentConfig): string {
+  // For Ollama with custom model selected, use the customModel field
+  if (agent.provider === 'ollama' && agent.model === 'custom' && agent.customModel) {
+    return agent.customModel;
+  }
+  return agent.model;
 }
 
 export class ApiError extends Error {
@@ -29,15 +41,17 @@ export async function callOpenAI(
   messages: Message[]
 ): Promise<string> {
   const apiMessages = convertMessagesToApiFormat(messages, agent.id);
+  const baseUrl = getBaseUrl(agent);
+  const modelName = getModelName(agent);
   
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${agent.apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: agent.model,
+      model: modelName,
       messages: [
         { role: 'system', content: agent.personality },
         ...apiMessages,
@@ -140,15 +154,17 @@ export async function callXAI(
   messages: Message[]
 ): Promise<string> {
   const apiMessages = convertMessagesToApiFormat(messages, agent.id);
+  const baseUrl = getBaseUrl(agent);
+  const modelName = getModelName(agent);
   
-  const response = await fetch('https://api.x.ai/v1/chat/completions', {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${agent.apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: agent.model,
+      model: modelName,
       messages: [
         { role: 'system', content: agent.personality },
         ...apiMessages,
@@ -170,6 +186,46 @@ export async function callXAI(
   return data.choices[0].message.content;
 }
 
+export async function callOllama(
+  agent: AgentConfig,
+  messages: Message[]
+): Promise<string> {
+  const apiMessages = convertMessagesToApiFormat(messages, agent.id);
+  const baseUrl = getBaseUrl(agent);
+  const modelName = getModelName(agent);
+  
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: modelName,
+      messages: [
+        { role: 'system', content: agent.personality },
+        ...apiMessages,
+      ],
+      stream: false,
+      options: {
+        temperature: 0.9,
+        num_predict: 150,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new ApiError(
+      `Ollama API error: ${response.status} - ${errorText}`,
+      response.status
+    );
+  }
+
+  const data = await response.json();
+  // Ollama returns { message: { content: "..." } }
+  return data?.message?.content || '';
+}
+
 export async function callAgent(
   agent: AgentConfig,
   messages: Message[]
@@ -183,6 +239,8 @@ export async function callAgent(
       return callGoogle(agent, messages);
     case 'xai':
       return callXAI(agent, messages);
+    case 'ollama':
+      return callOllama(agent, messages);
     default:
       throw new ApiError(`Unsupported provider: ${agent.provider}`);
   }
