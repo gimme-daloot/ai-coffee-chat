@@ -30,7 +30,9 @@ function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMe
       return msg.recipient === 'everyone' || msg.recipient === agentId;
     })
     .map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'assistant',
+      // User messages and OTHER agents' messages are 'user' role (incoming context)
+      // Only THIS agent's own messages are 'assistant' role (their previous responses)
+      role: msg.sender === agentId ? 'assistant' : 'user',
       content: msg.content,
     }));
 }
