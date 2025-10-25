@@ -8,14 +8,16 @@ import SettingsModal from "./SettingsModal";
 import { useToast } from "@/hooks/use-toast";
 import { AgentConfig, Message } from "@/types/agent";
 import { callAgent, ApiError } from "@/lib/apiClients";
+import { ConversationStateManager, ConversationMode } from "@/lib/conversationStateManager";
 
 const ChatInterface = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [recipient, setRecipient] = useState<string>("everyone");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [conversationManager] = useState(() => new ConversationStateManager());
+  const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -25,15 +27,31 @@ const ChatInterface = () => {
     if (storedAgents) {
       setAgents(JSON.parse(storedAgents));
     }
-  }, []);
+
+    // Load conversation states from localStorage
+    const storedConversations = localStorage.getItem("coffeehouse-conversations");
+    const storedMode = localStorage.getItem("coffeehouse-conversation-mode");
+    if (storedConversations) {
+      try {
+        const conversations = JSON.parse(storedConversations);
+        conversationManager.importStates(conversations, storedMode || 'group');
+        const mode = storedMode || 'group';
+        setConversationMode(mode);
+        setRecipient(mode === 'group' ? 'everyone' : mode);
+      } catch (e) {
+        console.error("Failed to load conversation states:", e);
+      }
+    }
+  }, [conversationManager]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const currentMessages = conversationManager.getCurrentMessages();
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [conversationMode, currentMessages.length]);
 
   const addMessage = (sender: string, recipient: string, content: string) => {
     const newMessage: Message = {
@@ -43,13 +61,24 @@ const ChatInterface = () => {
       content,
       timestamp: Date.now(),
     };
-    setMessages(prev => [...prev, newMessage]);
+    conversationManager.addMessage(newMessage);
+    
+    // Persist to localStorage
+    saveConversationState();
+    
     return newMessage;
   };
 
-  const getAgentResponse = async (agent: AgentConfig, currentMessages: Message[]) => {
+  const saveConversationState = () => {
+    const states = conversationManager.exportStates();
+    localStorage.setItem("coffeehouse-conversations", JSON.stringify(states));
+    localStorage.setItem("coffeehouse-conversation-mode", conversationMode);
+  };
+
+  const getAgentResponse = async (agent: AgentConfig) => {
     try {
-      const response = await callAgent(agent, currentMessages);
+      const agentMessages = conversationManager.getMessagesForAgent(agent.id);
+      const response = await callAgent(agent, agentMessages);
       return response;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -76,33 +105,25 @@ const ChatInterface = () => {
     setInput("");
     setIsLoading(true);
 
-    // Add user message
+    // Add user message to the current conversation
     addMessage("user", recipient, userMessage);
-    let currentMessages = [...messages, { 
-      id: Date.now().toString(), 
-      sender: "user", 
-      recipient, 
-      content: userMessage,
-      timestamp: Date.now()
-    }];
 
     try {
       if (recipient === "everyone") {
-        // Both agents respond in sequence
+        // Group conversation mode - both agents respond
         for (const agent of agents) {
-          const response = await getAgentResponse(agent, currentMessages);
-          const agentMessage = addMessage(agent.id, "everyone", response);
-          currentMessages = [...currentMessages, agentMessage];
+          const response = await getAgentResponse(agent);
+          addMessage(agent.id, "everyone", response);
           
           // Small delay between responses for natural flow
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } else {
-        // Only the selected agent responds
+        // Private conversation mode - only the selected agent responds
         const targetAgent = agents.find(a => a.id === recipient);
         if (targetAgent) {
-          const response = await getAgentResponse(targetAgent, currentMessages);
-          addMessage(targetAgent.id, "everyone", response);
+          const response = await getAgentResponse(targetAgent);
+          addMessage(targetAgent.id, "user", response);
         }
       }
     } catch (error) {
@@ -119,6 +140,21 @@ const ChatInterface = () => {
     }
   };
 
+  const handleRecipientChange = (newRecipient: string) => {
+    setRecipient(newRecipient);
+    
+    // Switch conversation mode
+    const newMode: ConversationMode = newRecipient === "everyone" ? "group" : newRecipient;
+    
+    if (newMode !== conversationMode) {
+      conversationManager.switchMode(newMode);
+      setConversationMode(newMode);
+      
+      // Persist the mode change
+      localStorage.setItem("coffeehouse-conversation-mode", newMode);
+    }
+  };
+
   const getAgentInfo = (agentId: string) => {
     return agents.find(a => a.id === agentId);
   };
@@ -129,6 +165,11 @@ const ChatInterface = () => {
       <header className="bg-card border-b border-border shadow-sm p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">☕ AI Coffeehouse</h1>
+          {conversationMode !== 'group' && (
+            <span className="text-sm px-3 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 border border-green-300 dark:border-green-700">
+              Private: {getAgentInfo(conversationMode)?.emoji} {getAgentInfo(conversationMode)?.name}
+            </span>
+          )}
         </div>
         <Button
           variant="ghost"
@@ -142,14 +183,22 @@ const ChatInterface = () => {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
+        {currentMessages.length === 0 && (
           <div className="text-center text-muted-foreground mt-12">
-            <p className="text-lg mb-2">Welcome to the Coffeehouse! ☕</p>
-            <p className="text-sm">Start a conversation with your AI agents</p>
+            <p className="text-lg mb-2">
+              {conversationMode === 'group' 
+                ? 'Welcome to the Coffeehouse! ☕' 
+                : `Private chat with ${getAgentInfo(conversationMode)?.name || 'agent'}`}
+            </p>
+            <p className="text-sm">
+              {conversationMode === 'group'
+                ? 'Start a conversation with your AI agents'
+                : 'This is a private conversation'}
+            </p>
           </div>
         )}
         
-        {messages.map((message) => {
+        {currentMessages.map((message) => {
           const agent = message.sender !== 'user' ? getAgentInfo(message.sender) : null;
           return (
             <MessageBubble
@@ -180,8 +229,9 @@ const ChatInterface = () => {
       <div className="bg-card border-t border-border p-4 space-y-3">
         <RecipientSelector
           value={recipient}
-          onChange={setRecipient}
+          onChange={handleRecipientChange}
           agents={agents}
+          currentMode={conversationMode}
         />
         
         <div className="flex gap-2">
