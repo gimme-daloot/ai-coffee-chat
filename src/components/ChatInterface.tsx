@@ -53,7 +53,7 @@ const ChatInterface = () => {
     scrollToBottom();
   }, [conversationMode, currentMessages.length]);
 
-  const addMessage = (sender: string, recipient: string, content: string) => {
+  const addMessage = (sender: string, recipient: string, content: string, targetMode?: ConversationMode) => {
     const newMessage: Message = {
       id: Date.now().toString(),
       sender,
@@ -61,11 +61,18 @@ const ChatInterface = () => {
       content,
       timestamp: Date.now(),
     };
-    conversationManager.addMessage(newMessage);
-    
+
+    // If targetMode is specified, add to that specific conversation
+    // Otherwise, add to current conversation
+    if (targetMode) {
+      conversationManager.addMessageToMode(targetMode, newMessage);
+    } else {
+      conversationManager.addMessage(newMessage);
+    }
+
     // Persist to localStorage
     saveConversationState();
-    
+
     return newMessage;
   };
 
@@ -102,28 +109,31 @@ const ChatInterface = () => {
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
+    const messageRecipient = recipient;
+    const messageMode = conversationMode; // Capture mode at send time
     setInput("");
     setIsLoading(true);
 
-    // Add user message to the current conversation
-    addMessage("user", recipient, userMessage);
+    // Add user message to the conversation (mode captured at send time)
+    addMessage("user", messageRecipient, userMessage, messageMode);
 
     try {
-      if (recipient === "everyone") {
+      if (messageRecipient === "everyone") {
         // Group conversation mode - both agents respond
         for (const agent of agents) {
           const response = await getAgentResponse(agent);
-          addMessage(agent.id, "everyone", response);
-          
+          addMessage(agent.id, "everyone", response, 'group');
+
           // Small delay between responses for natural flow
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } else {
         // Private conversation mode - only the selected agent responds
-        const targetAgent = agents.find(a => a.id === recipient);
+        const targetAgent = agents.find(a => a.id === messageRecipient);
         if (targetAgent) {
           const response = await getAgentResponse(targetAgent);
-          addMessage(targetAgent.id, "user", response);
+          // Add response to the PRIVATE conversation, not current mode
+          addMessage(targetAgent.id, "user", response, targetAgent.id);
         }
       }
     } catch (error) {
@@ -220,9 +230,12 @@ const ChatInterface = () => {
         })}
         
         {isLoading && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <div className="animate-pulse">💭</div>
-            <span className="text-sm">Thinking...</span>
+          <div className="flex items-center gap-3 text-muted-foreground bg-muted/50 p-4 rounded-lg border border-border">
+            <div className="animate-pulse text-2xl">💭</div>
+            <div>
+              <span className="text-sm font-medium">Agent is thinking...</span>
+              <div className="text-xs opacity-70">This may take a moment with local models</div>
+            </div>
           </div>
         )}
         
@@ -244,11 +257,13 @@ const ChatInterface = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              recipient === "everyone" 
-                ? "Message everyone..." 
-                : `Whisper to ${getAgentInfo(recipient)?.name}...`
+              isLoading
+                ? "⏳ Waiting for response..."
+                : recipient === "everyone"
+                  ? "Message everyone..."
+                  : `Whisper to ${getAgentInfo(recipient)?.name}...`
             }
-            className="min-h-[80px] resize-none"
+            className={`min-h-[80px] resize-none ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={isLoading}
           />
           <Button
