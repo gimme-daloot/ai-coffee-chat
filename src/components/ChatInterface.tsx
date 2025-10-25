@@ -159,9 +159,13 @@ const ChatInterface = () => {
               type={message.sender === 'user' ? 'user' : (agent?.color || 'user')}
               emoji={message.sender === 'user' ? '🧍' : (agent?.emoji || '🤖')}
               isWhisper={message.recipient !== 'everyone'}
-              whisperTarget={message.recipient !== 'everyone' && message.sender === 'user' 
-                ? getAgentInfo(message.recipient)?.name 
-                : undefined}
+              whisperTarget={
+                message.recipient !== 'everyone'
+                  ? message.sender === 'user'
+                    ? getAgentInfo(message.recipient)?.name   // User whisper: show agent name
+                    : 'You'                                    // Agent whisper: show "You"
+                  : undefined
+              }
             />
           );
         })}
