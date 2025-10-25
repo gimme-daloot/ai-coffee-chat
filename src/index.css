@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Coffeehouse theme - warm, inviting colors */
+    --background: 35 30% 96%;
+    --foreground: 25 20% 15%;
+
+    --card: 35 25% 98%;
+    --card-foreground: 25 20% 15%;
+
+    --popover: 35 25% 98%;
+    --popover-foreground: 25 20% 15%;
+
+    --primary: 25 40% 35%;
+    --primary-foreground: 35 30% 98%;
+
+    --secondary: 30 20% 88%;
+    --secondary-foreground: 25 20% 15%;
+
+    --muted: 30 15% 90%;
+    --muted-foreground: 25 10% 45%;
+
+    --accent: 40 60% 65%;
+    --accent-foreground: 25 20% 15%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 35 30% 98%;
+
+    --border: 30 15% 85%;
+    --input: 30 15% 90%;
+    --ring: 25 40% 35%;
+
+    --radius: 0.75rem;
+
+    /* Agent colors */
+    --barista: 25 45% 40%;
+    --barista-light: 25 40% 88%;
+    --philosopher: 215 25% 45%;
+    --philosopher-light: 215 20% 88%;
+    --user: 35 20% 92%;
+  }
+
+  .dark {
+    --background: 25 15% 12%;
+    --foreground: 35 30% 95%;
+
+    --card: 25 15% 15%;
+    --card-foreground: 35 30% 95%;
+
+    --popover: 25 15% 15%;
+    --popover-foreground: 35 30% 95%;
+
+    --primary: 35 30% 95%;
+    --primary-foreground: 25 15% 12%;
+
+    --secondary: 25 10% 22%;
+    --secondary-foreground: 35 30% 95%;
+
+    --muted: 25 10% 25%;
+    --muted-foreground: 35 15% 65%;
+
+    --accent: 40 50% 55%;
+    --accent-foreground: 25 15% 12%;
+
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 35 30% 95%;
+
+    --border: 25 10% 25%;
+    --input: 25 10% 22%;
+    --ring: 35 30% 85%;
+
+    --barista: 25 50% 55%;
+    --barista-light: 25 20% 25%;
+    --philosopher: 215 30% 60%;
+    --philosopher-light: 215 15% 25%;
+    --user: 25 10% 30%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
