@@ -74,16 +74,20 @@ export class ConversationStateManager {
 
   /**
    * Get messages relevant to a specific agent
-   * In group mode: returns all group messages
-   * In private mode: returns messages from the private conversation with that agent
+   * Each agent sees:
+   * - ALL group messages (public conversation everyone hears)
+   * - PLUS their own private messages with the user
+   * - But NOT other agents' private messages
    */
   getMessagesForAgent(agentId: string): Message[] {
-    if (this.currentMode === 'group') {
-      return this.getMessages('group');
-    } else if (this.currentMode === agentId) {
-      return this.getMessages(agentId);
-    }
-    return [];
+    const groupMessages = this.getMessages('group');
+    const privateMessages = this.getMessages(agentId);
+
+    // Combine both contexts and sort by timestamp for correct order
+    const combined = [...groupMessages, ...privateMessages];
+    combined.sort((a, b) => a.timestamp - b.timestamp);
+
+    return combined;
   }
 
   /**
