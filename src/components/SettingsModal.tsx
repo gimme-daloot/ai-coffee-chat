@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +24,15 @@ interface SettingsModalProps {
 const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsModalProps) => {
   const { toast } = useToast();
   const [editedAgents, setEditedAgents] = useState<AgentConfig[]>(agents);
+
+  // Sync local editedAgents whenever the modal opens or agents prop changes.
+  // This ensures the settings modal always shows the current agent configs
+  // (e.g. when ChatInterface loads agents from localStorage after mount).
+  useEffect(() => {
+    if (open) {
+      setEditedAgents(agents);
+    }
+  }, [open, agents]);
 
   const handleResetOnboarding = () => {
     localStorage.removeItem("coffeehouse-onboarded");
