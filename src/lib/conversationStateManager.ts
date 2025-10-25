@@ -26,8 +26,8 @@ export class ConversationStateManager {
    * @param mode - 'group' for group chat or agentId for private chat
    */
   switchMode(mode: ConversationMode): void {
-    if (!this.conversationStates.has(mode) && mode !== 'group') {
-      // Initialize new private conversation
+    if (!this.conversationStates.has(mode)) {
+      // Initialize new conversation
       this.conversationStates.set(mode, []);
     }
     this.currentMode = mode;
@@ -122,7 +122,7 @@ export class ConversationStateManager {
       this.conversationStates.set(mode, messages);
     });
     
-    if (currentMode && states[currentMode]) {
+    if (currentMode && this.conversationStates.has(currentMode)) {
       this.currentMode = currentMode;
     } else {
       this.currentMode = 'group';
