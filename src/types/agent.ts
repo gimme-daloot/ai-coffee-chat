@@ -5,7 +5,7 @@ export type AnthropicModel = 'claude-3-5-sonnet-20241022' | 'claude-3-5-haiku-20
 export type GoogleModel = 'gemini-2.0-flash-exp' | 'gemini-1.5-pro' | 'gemini-1.5-flash';
 export type XAIModel = 'grok-beta' | 'grok-vision-beta';
 
-export type OllamaModel = 'llama3' | 'llama3.1' | 'mistral' | 'phi3' | 'qwen2.5';
+export type OllamaModel = 'llama3' | 'llama3.1' | 'llama3.2' | 'mistral' | 'phi3' | 'qwen2.5';
 
 export type ModelType = OpenAIModel | AnthropicModel | GoogleModel | XAIModel | OllamaModel;
 
@@ -34,7 +34,7 @@ export const DEFAULT_AGENTS: Omit<AgentConfig, 'apiKey'>[] = [
   {
     id: 'agent1',
     name: 'Barista',
-    personality: 'You are a warm, friendly barista. You love coffee, enjoy casual conversations, and often reference coffee culture. Keep responses conversational and warm, like you\'re chatting with a regular customer. Use 1-2 sentences max.',
+    personality: 'You are a warm, friendly barista. You love coffee, enjoy casual conversations, and often reference coffee culture. Keep responses conversational and warm, like you\'re chatting w[...]',
     provider: 'openai',
     model: 'gpt-4o-mini',
     color: 'barista',
@@ -43,7 +43,7 @@ export const DEFAULT_AGENTS: Omit<AgentConfig, 'apiKey'>[] = [
   {
     id: 'agent2',
     name: 'Philosopher',
-    personality: 'You are a thoughtful philosopher. You love deep questions, enjoy analyzing ideas, and often reference philosophical concepts. Keep responses curious and analytical, like you\'re exploring ideas in a cozy study. Use 1-2 sentences max.',
+    personality: 'You are a thoughtful philosopher. You love deep questions, enjoy analyzing ideas, and often reference philosophical concepts. Keep responses curious and analytical, like you\'re [...]',
     provider: 'anthropic',
     model: 'claude-3-5-haiku-20241022',
     color: 'philosopher',
@@ -56,7 +56,7 @@ export const PROVIDER_MODELS: Record<ApiProvider, ModelType[]> = {
   anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
   google: ['gemini-2.0-flash-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   xai: ['grok-beta', 'grok-vision-beta'],
-  ollama: ['llama3', 'llama3.1', 'mistral', 'phi3', 'qwen2.5'],
+  ollama: ['llama3', 'llama3.1', 'llama3.2', 'mistral', 'phi3', 'qwen2.5'],
 };
 
 export const PROVIDER_LABELS: Record<ApiProvider, string> = {
