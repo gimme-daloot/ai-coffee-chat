@@ -18,6 +18,8 @@ const ChatInterface = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
+  const [isAutoChat, setIsAutoChat] = useState(false);
+  const [autoChatInterval, setAutoChatInterval] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -52,6 +54,15 @@ const ChatInterface = () => {
   useEffect(() => {
     scrollToBottom();
   }, [conversationMode, currentMessages.length]);
+
+  // Cleanup auto-chat on unmount
+  useEffect(() => {
+    return () => {
+      if (autoChatInterval) {
+        clearInterval(autoChatInterval);
+      }
+    };
+  }, [autoChatInterval]);
 
   const addMessage = (sender: string, recipient: string, content: string) => {
     const newMessage: Message = {
@@ -176,15 +187,20 @@ const ChatInterface = () => {
   };
 
   const handleRecipientChange = (newRecipient: string) => {
+    // Stop auto-chat if switching away from group mode
+    if (newRecipient !== "everyone" && isAutoChat) {
+      stopAutoChat();
+    }
+
     setRecipient(newRecipient);
-    
+
     // Switch conversation mode
     const newMode: ConversationMode = newRecipient === "everyone" ? "group" : newRecipient;
-    
+
     if (newMode !== conversationMode) {
       conversationManager.switchMode(newMode);
       setConversationMode(newMode);
-      
+
       // Persist the mode change
       localStorage.setItem("coffeehouse-conversation-mode", newMode);
     }
@@ -192,6 +208,156 @@ const ChatInterface = () => {
 
   const getAgentInfo = (agentId: string) => {
     return agents.find(a => a.id === agentId);
+  };
+
+  // Determine which agent should speak next in auto-chat mode
+  const determineNextSpeaker = (): string | 'user' => {
+    const messages = conversationManager.getCurrentMessages();
+    if (messages.length === 0 || agents.length === 0) {
+      return agents[0]?.id || 'user';
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    const lastContent = lastMessage.content.toLowerCase();
+
+    // Priority 1: Check for @mentions
+    for (const agent of agents) {
+      const mention = `@${agent.name.toLowerCase()}`;
+      if (lastContent.includes(mention)) {
+        return agent.id;
+      }
+    }
+    if (lastContent.includes('@user')) {
+      return 'user';
+    }
+
+    // Priority 2: Check if message ends with "?" - pause for user
+    if (lastContent.trim().endsWith('?')) {
+      return 'user';
+    }
+
+    // Priority 3: Check last 5 messages for same speaker count
+    const recentMessages = messages.slice(-5);
+    const speakerCounts: { [key: string]: number } = {};
+    recentMessages.forEach(msg => {
+      speakerCounts[msg.sender] = (speakerCounts[msg.sender] || 0) + 1;
+    });
+
+    // If same agent spoke 3+ times, switch to other agent
+    if (lastMessage.sender !== 'user') {
+      const lastSpeakerCount = speakerCounts[lastMessage.sender] || 0;
+      if (lastSpeakerCount >= 3) {
+        // Switch to the other agent
+        const otherAgent = agents.find(a => a.id !== lastMessage.sender);
+        if (otherAgent) {
+          return otherAgent.id;
+        }
+      }
+    }
+
+    // Priority 4: Simple alternation
+    if (lastMessage.sender === 'user') {
+      return agents[0]?.id || 'user';
+    }
+
+    const lastAgentIndex = agents.findIndex(a => a.id === lastMessage.sender);
+    if (lastAgentIndex === -1) {
+      return agents[0]?.id || 'user';
+    }
+
+    const nextAgentIndex = (lastAgentIndex + 1) % agents.length;
+    return agents[nextAgentIndex].id;
+  };
+
+  // Run auto-chat loop
+  const runAutoChat = async () => {
+    if (!isAutoChat || isLoading) return;
+
+    try {
+      const nextSpeaker = determineNextSpeaker();
+
+      // If next speaker is 'user', pause auto-chat
+      if (nextSpeaker === 'user') {
+        stopAutoChat();
+        toast({
+          title: "Auto-Chat Paused",
+          description: "An agent asked a question. Auto-chat has been paused.",
+        });
+        return;
+      }
+
+      const agent = agents.find(a => a.id === nextSpeaker);
+      if (!agent) return;
+
+      setIsLoading(true);
+
+      // Get agent response
+      const response = await getAgentResponse(agent);
+
+      // Add response to conversation
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        sender: agent.id,
+        recipient: "everyone",
+        content: response,
+        timestamp: Date.now(),
+      };
+      conversationManager.addMessage(newMessage);
+      saveConversationState();
+
+      setIsLoading(false);
+
+      // Wait 2-3 seconds before next message
+      if (isAutoChat) {
+        const delay = 2000 + Math.random() * 1000; // 2-3 seconds
+        setTimeout(() => {
+          if (isAutoChat) {
+            runAutoChat();
+          }
+        }, delay);
+      }
+    } catch (error) {
+      console.error("Error in auto-chat:", error);
+      setIsLoading(false);
+      stopAutoChat();
+    }
+  };
+
+  const startAutoChat = () => {
+    if (recipient !== "everyone") {
+      toast({
+        title: "Auto-Chat Only Works in Group Mode",
+        description: "Please switch to 'everyone' to start auto-chat.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (agents.length < 2) {
+      toast({
+        title: "Need Multiple Agents",
+        description: "Auto-chat requires at least 2 agents configured.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAutoChat(true);
+    toast({
+      title: "Auto-Chat Started",
+      description: "Agents will now chat autonomously.",
+    });
+
+    // Start the auto-chat loop
+    setTimeout(() => runAutoChat(), 500);
+  };
+
+  const stopAutoChat = () => {
+    setIsAutoChat(false);
+    if (autoChatInterval) {
+      clearInterval(autoChatInterval);
+      setAutoChatInterval(null);
+    }
   };
 
   return (
@@ -268,23 +434,37 @@ const ChatInterface = () => {
           agents={agents}
           currentMode={conversationMode}
         />
-        
+
+        {/* Auto-Chat Button (only in group mode) */}
+        {recipient === "everyone" && (
+          <div className="flex justify-center">
+            <Button
+              onClick={isAutoChat ? stopAutoChat : startAutoChat}
+              variant={isAutoChat ? "destructive" : "secondary"}
+              disabled={isLoading && !isAutoChat}
+              className="w-full max-w-xs"
+            >
+              {isAutoChat ? "Stop Auto Chat" : "Start Auto Chat"}
+            </Button>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              recipient === "everyone" 
-                ? "Message everyone..." 
+              recipient === "everyone"
+                ? "Message everyone..."
                 : `Whisper to ${getAgentInfo(recipient)?.name}...`
             }
             className="min-h-[80px] resize-none"
-            disabled={isLoading}
+            disabled={isLoading || isAutoChat}
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isAutoChat}
             size="icon"
             className="self-end h-[80px] w-[80px]"
           >
