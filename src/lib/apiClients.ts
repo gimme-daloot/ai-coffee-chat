@@ -24,7 +24,7 @@ function getLocalModeConfig(): { enabled: boolean; baseUrl?: string } {
 }
 
 function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMessage[] {
-  return messages
+  const filtered = messages
     .filter(msg => {
       // Include messages where:
       // 1. This agent is the recipient (messages TO this agent)
@@ -35,9 +35,15 @@ function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMe
              msg.sender === agentId;
     })
     .map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'assistant',
+      // Messages from THIS agent are 'assistant' messages
+      // Messages from the user OR other agents are 'user' messages
+      // This ensures proper conversation flow for the API
+      role: msg.sender === agentId ? 'assistant' : 'user',
       content: msg.content,
     }));
+
+  console.log(`[API Debug] Messages for ${agentId}:`, filtered);
+  return filtered;
 }
 
 export async function callOpenAI(
