@@ -343,12 +343,11 @@ const ChatInterface = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              recipient === "everyone" 
-                ? "Message everyone..." 
+              recipient === "everyone"
+                ? "Message everyone..."
                 : `Whisper to ${getAgentInfo(recipient)?.name}...`
             }
             className="min-h-[80px] resize-none"
-            disabled={isLoading}
           />
           <Button
             onClick={handleSendMessage}
