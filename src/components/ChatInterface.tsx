@@ -105,6 +105,10 @@ const ChatInterface = () => {
     setInput("");
     setIsLoading(true);
 
+    // Capture the conversation mode at the time of sending
+    // This ensures responses go to the correct conversation even if the user switches tabs
+    const messageConversationMode = conversationMode;
+
     // Add user message to the current conversation
     addMessage("user", recipient, userMessage);
 
@@ -113,8 +117,18 @@ const ChatInterface = () => {
         // Group conversation mode - both agents respond
         for (const agent of agents) {
           const response = await getAgentResponse(agent);
-          addMessage(agent.id, "everyone", response);
-          
+
+          // Add response to the original conversation mode, not the current one
+          const newMessage: Message = {
+            id: Date.now().toString(),
+            sender: agent.id,
+            recipient: "everyone",
+            content: response,
+            timestamp: Date.now(),
+          };
+          conversationManager.addMessageToMode(messageConversationMode, newMessage);
+          saveConversationState();
+
           // Small delay between responses for natural flow
           await new Promise(resolve => setTimeout(resolve, 500));
         }
@@ -123,7 +137,17 @@ const ChatInterface = () => {
         const targetAgent = agents.find(a => a.id === recipient);
         if (targetAgent) {
           const response = await getAgentResponse(targetAgent);
-          addMessage(targetAgent.id, "user", response);
+
+          // Add response to the original conversation mode, not the current one
+          const newMessage: Message = {
+            id: Date.now().toString(),
+            sender: targetAgent.id,
+            recipient: "user",
+            content: response,
+            timestamp: Date.now(),
+          };
+          conversationManager.addMessageToMode(messageConversationMode, newMessage);
+          saveConversationState();
         }
       }
     } catch (error) {
