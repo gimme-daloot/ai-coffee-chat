@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Settings } from "lucide-react";
+import { Send, Settings, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import MessageBubble from "./MessageBubble";
@@ -18,6 +18,9 @@ const ChatInterface = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
+  const [isAutoChatting, setIsAutoChatting] = useState(false);
+  const [autoChatTurnCount, setAutoChatTurnCount] = useState(0);
+  const autoChatRef = useRef<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -177,14 +180,14 @@ const ChatInterface = () => {
 
   const handleRecipientChange = (newRecipient: string) => {
     setRecipient(newRecipient);
-    
+
     // Switch conversation mode
     const newMode: ConversationMode = newRecipient === "everyone" ? "group" : newRecipient;
-    
+
     if (newMode !== conversationMode) {
       conversationManager.switchMode(newMode);
       setConversationMode(newMode);
-      
+
       // Persist the mode change
       localStorage.setItem("coffeehouse-conversation-mode", newMode);
     }
@@ -193,6 +196,116 @@ const ChatInterface = () => {
   const getAgentInfo = (agentId: string) => {
     return agents.find(a => a.id === agentId);
   };
+
+  // Auto-chat: agents continue discussing automatically
+  const triggerNextAgentResponse = async () => {
+    if (!autoChatRef.current || conversationMode !== 'group' || agents.length < 2) {
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Get the last message to determine which agent should respond next
+      const currentMessages = conversationManager.getCurrentMessages();
+      const lastMessage = currentMessages[currentMessages.length - 1];
+
+      // Determine which agent should respond next
+      // If the last message was from an agent, the other agent responds
+      // If the last message was from the user, pick a random agent or the first one
+      let nextAgent: AgentConfig;
+
+      if (lastMessage && lastMessage.sender !== 'user') {
+        // Find the agent that didn't send the last message
+        const lastSender = lastMessage.sender;
+        nextAgent = agents.find(a => a.id !== lastSender) || agents[0];
+      } else {
+        // User sent last message or no messages, start with first agent
+        nextAgent = agents[0];
+      }
+
+      // Get the response from the next agent
+      const response = await getAgentResponse(nextAgent);
+
+      // Add the response to the conversation
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        sender: nextAgent.id,
+        recipient: "everyone",
+        content: response,
+        timestamp: Date.now(),
+      };
+      conversationManager.addMessage(newMessage);
+      saveConversationState();
+
+      // Increment turn count
+      setAutoChatTurnCount(prev => prev + 1);
+
+      // Continue the auto-chat loop if still active
+      if (autoChatRef.current) {
+        // Add a delay before the next response for natural flow
+        setTimeout(() => {
+          if (autoChatRef.current) {
+            triggerNextAgentResponse();
+          }
+        }, 1500); // 1.5 second delay between responses
+      }
+    } catch (error) {
+      console.error("Error in auto-chat:", error);
+      // Stop auto-chat on error
+      setIsAutoChatting(false);
+      autoChatRef.current = false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startAutoChat = () => {
+    if (conversationMode !== 'group') {
+      toast({
+        title: "Auto-chat unavailable",
+        description: "Auto-chat only works in group conversations.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (agents.length < 2) {
+      toast({
+        title: "Need more agents",
+        description: "Auto-chat requires at least 2 agents.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAutoChatting(true);
+    autoChatRef.current = true;
+    setAutoChatTurnCount(0);
+
+    toast({
+      title: "Auto-chat started",
+      description: "Agents will continue discussing automatically.",
+    });
+
+    // Start the auto-chat loop
+    triggerNextAgentResponse();
+  };
+
+  const stopAutoChat = () => {
+    setIsAutoChatting(false);
+    autoChatRef.current = false;
+
+    toast({
+      title: "Auto-chat stopped",
+      description: `Conversation ended after ${autoChatTurnCount} turns.`,
+    });
+  };
+
+  // Update auto-chat ref when state changes
+  useEffect(() => {
+    autoChatRef.current = isAutoChatting;
+  }, [isAutoChatting]);
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-background via-muted to-secondary">
@@ -268,23 +381,55 @@ const ChatInterface = () => {
           agents={agents}
           currentMode={conversationMode}
         />
-        
+
+        {/* Auto-chat controls - only show in group mode */}
+        {conversationMode === 'group' && agents.length >= 2 && (
+          <div className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Auto-chat</span>
+              {isAutoChatting && (
+                <span className="text-xs text-muted-foreground">
+                  ({autoChatTurnCount} turns)
+                </span>
+              )}
+            </div>
+            <Button
+              onClick={isAutoChatting ? stopAutoChat : startAutoChat}
+              variant={isAutoChatting ? "destructive" : "default"}
+              size="sm"
+              disabled={isLoading && !isAutoChatting}
+            >
+              {isAutoChatting ? (
+                <>
+                  <Square className="h-4 w-4 mr-2" />
+                  Stop
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Start
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              recipient === "everyone" 
-                ? "Message everyone..." 
+              recipient === "everyone"
+                ? "Message everyone..."
                 : `Whisper to ${getAgentInfo(recipient)?.name}...`
             }
             className="min-h-[80px] resize-none"
-            disabled={isLoading}
+            disabled={isLoading || isAutoChatting}
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isAutoChatting}
             size="icon"
             className="self-end h-[80px] w-[80px]"
           >
