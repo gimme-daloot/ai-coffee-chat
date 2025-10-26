@@ -87,6 +87,20 @@ export class ConversationStateManager {
   }
 
   /**
+   * Get messages relevant to a specific agent in a specific conversation mode
+   * This is useful when you need to get messages for an agent from a specific conversation
+   * regardless of what the current mode is
+   */
+  getMessagesForAgentInMode(agentId: string, mode: ConversationMode): Message[] {
+    if (mode === 'group') {
+      return this.getMessages('group');
+    } else if (mode === agentId) {
+      return this.getMessages(agentId);
+    }
+    return [];
+  }
+
+  /**
    * Clear all conversation states
    */
   clearAll(): void {

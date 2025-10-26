@@ -75,9 +75,11 @@ const ChatInterface = () => {
     localStorage.setItem("coffeehouse-conversation-mode", conversationMode);
   };
 
-  const getAgentResponse = async (agent: AgentConfig) => {
+  const getAgentResponse = async (agent: AgentConfig, mode: ConversationMode) => {
     try {
-      const agentMessages = conversationManager.getMessagesForAgent(agent.id);
+      // Get messages from the specific conversation mode, not the current one
+      // This ensures agents get the right context even if user switches tabs
+      const agentMessages = conversationManager.getMessagesForAgentInMode(agent.id, mode);
       const response = await callAgent(agent, agentMessages);
       return response;
     } catch (error) {
@@ -116,7 +118,8 @@ const ChatInterface = () => {
       if (recipient === "everyone") {
         // Group conversation mode - both agents respond
         for (const agent of agents) {
-          const response = await getAgentResponse(agent);
+          // Pass the conversation mode so agent gets correct context
+          const response = await getAgentResponse(agent, messageConversationMode);
 
           // Add response to the original conversation mode, not the current one
           const newMessage: Message = {
@@ -136,7 +139,8 @@ const ChatInterface = () => {
         // Private conversation mode - only the selected agent responds
         const targetAgent = agents.find(a => a.id === recipient);
         if (targetAgent) {
-          const response = await getAgentResponse(targetAgent);
+          // Pass the conversation mode so agent gets correct context
+          const response = await getAgentResponse(targetAgent, messageConversationMode);
 
           // Add response to the original conversation mode, not the current one
           const newMessage: Message = {
