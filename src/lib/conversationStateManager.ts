@@ -74,24 +74,23 @@ export class ConversationStateManager {
 
   /**
    * Get messages relevant to a specific agent
-   * In group mode: returns BOTH private messages with this agent AND all group messages (merged and sorted)
-   * In private mode: returns messages from the private conversation with that agent
+   * ALWAYS returns BOTH private messages with this agent AND all group messages (merged and sorted)
+   * This enables bidirectional knowledge flow: agents can learn from both contexts
+   * while keeping the conversation feeds visually separate
    */
   getMessagesForAgent(agentId: string): Message[] {
-    if (this.currentMode === 'group') {
-      // In group mode, agent needs access to both their private history AND group history
-      const privateMessages = this.getMessages(agentId);
-      const groupMessages = this.getMessages('group');
+    // Agent should ALWAYS have access to both their private AND group context
+    // This allows information to flow bidirectionally:
+    // - Private info flows to group (agent remembers private conversations when in group)
+    // - Group info flows to private (agent remembers group conversations when in private)
+    const privateMessages = this.getMessages(agentId);
+    const groupMessages = this.getMessages('group');
 
-      // Merge and sort by timestamp to maintain chronological order
-      const allMessages = [...privateMessages, ...groupMessages];
-      allMessages.sort((a, b) => a.timestamp - b.timestamp);
+    // Merge and sort by timestamp to maintain chronological order
+    const allMessages = [...privateMessages, ...groupMessages];
+    allMessages.sort((a, b) => a.timestamp - b.timestamp);
 
-      return allMessages;
-    } else if (this.currentMode === agentId) {
-      return this.getMessages(agentId);
-    }
-    return [];
+    return allMessages;
   }
 
   /**
