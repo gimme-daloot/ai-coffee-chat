@@ -19,7 +19,6 @@ const ChatInterface = () => {
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
   const [isAutoChatActive, setIsAutoChatActive] = useState(false);
-  const [autoChatRounds, setAutoChatRounds] = useState(3); // Number of rounds for auto-chat
   const autoChatAbortRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -149,10 +148,9 @@ const ChatInterface = () => {
     autoChatAbortRef.current = false;
 
     try {
-      // Run multiple rounds of conversation
-      for (let round = 0; round < autoChatRounds; round++) {
-        if (autoChatAbortRef.current) break;
-
+      let turnCount = 0;
+      // Keep looping forever until user stops
+      while (!autoChatAbortRef.current) {
         // Each agent takes a turn to respond
         for (let i = 0; i < agents.length; i++) {
           if (autoChatAbortRef.current) break;
@@ -172,7 +170,7 @@ const ChatInterface = () => {
             setIsLoading(false);
 
             const newMessage: Message = {
-              id: Date.now().toString() + `-${round}-${i}`,
+              id: Date.now().toString() + `-${turnCount}`,
               sender: agent.id,
               recipient: "everyone",
               content: response,
@@ -181,6 +179,8 @@ const ChatInterface = () => {
 
             conversationManager.addMessageToMode(messageConversationMode, newMessage);
             saveConversationState();
+
+            turnCount++;
 
             // Small delay between agent responses for readability
             await new Promise(resolve => setTimeout(resolve, 800));
