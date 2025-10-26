@@ -42,34 +42,38 @@ export class ConversationStateManager {
 
   /**
    * Get messages for the current conversation context
+   * Returns a COPY to prevent React state issues with direct array mutations
    */
   getCurrentMessages(): Message[] {
-    return this.conversationStates.get(this.currentMode) || [];
+    const messages = this.conversationStates.get(this.currentMode) || [];
+    return [...messages];
   }
 
   /**
    * Get messages for a specific conversation mode
+   * Returns a COPY to prevent React state issues with direct array mutations
    */
   getMessages(mode: ConversationMode): Message[] {
-    return this.conversationStates.get(mode) || [];
+    const messages = this.conversationStates.get(mode) || [];
+    return [...messages];
   }
 
   /**
    * Add a message to the current conversation
+   * Creates a NEW array to ensure React detects the change
    */
   addMessage(message: Message): void {
     const messages = this.conversationStates.get(this.currentMode) || [];
-    messages.push(message);
-    this.conversationStates.set(this.currentMode, messages);
+    this.conversationStates.set(this.currentMode, [...messages, message]);
   }
 
   /**
    * Add a message to a specific conversation mode
+   * Creates a NEW array to ensure React detects the change
    */
   addMessageToMode(mode: ConversationMode, message: Message): void {
     const messages = this.conversationStates.get(mode) || [];
-    messages.push(message);
-    this.conversationStates.set(mode, messages);
+    this.conversationStates.set(mode, [...messages, message]);
   }
 
   /**

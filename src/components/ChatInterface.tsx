@@ -18,6 +18,7 @@ const ChatInterface = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
+  const [messageUpdateTrigger, setMessageUpdateTrigger] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -48,10 +49,13 @@ const ChatInterface = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Get current messages for the active conversation mode
+  // Depends on messageUpdateTrigger to force re-render when messages change
   const currentMessages = conversationManager.getCurrentMessages();
+
   useEffect(() => {
     scrollToBottom();
-  }, [conversationMode, currentMessages.length]);
+  }, [conversationMode, messageUpdateTrigger]);
 
   const addMessage = (sender: string, recipient: string, content: string) => {
     const newMessage: Message = {
@@ -62,10 +66,13 @@ const ChatInterface = () => {
       timestamp: Date.now(),
     };
     conversationManager.addMessage(newMessage);
-    
+
+    // Trigger re-render to show new message
+    setMessageUpdateTrigger(prev => prev + 1);
+
     // Persist to localStorage
     saveConversationState();
-    
+
     return newMessage;
   };
 
@@ -136,6 +143,10 @@ const ChatInterface = () => {
             timestamp: Date.now() + i, // Slight timestamp offset for ordering
           };
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
+
+          // Trigger re-render to show new message
+          setMessageUpdateTrigger(prev => prev + 1);
+
           saveConversationState();
 
           // Small delay between responses for natural flow (except after the last one)
@@ -158,6 +169,10 @@ const ChatInterface = () => {
             timestamp: Date.now(),
           };
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
+
+          // Trigger re-render to show new message
+          setMessageUpdateTrigger(prev => prev + 1);
+
           saveConversationState();
         }
       }
@@ -177,14 +192,17 @@ const ChatInterface = () => {
 
   const handleRecipientChange = (newRecipient: string) => {
     setRecipient(newRecipient);
-    
+
     // Switch conversation mode
     const newMode: ConversationMode = newRecipient === "everyone" ? "group" : newRecipient;
-    
+
     if (newMode !== conversationMode) {
       conversationManager.switchMode(newMode);
       setConversationMode(newMode);
-      
+
+      // Trigger re-render to show messages for the new mode
+      setMessageUpdateTrigger(prev => prev + 1);
+
       // Persist the mode change
       localStorage.setItem("coffeehouse-conversation-mode", newMode);
     }
