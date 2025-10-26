@@ -27,12 +27,10 @@ function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMe
   return messages
     .filter(msg => {
       // Include messages where:
-      // 1. This agent is the recipient (messages TO this agent)
-      // 2. This agent is the sender (messages FROM this agent - preserves context)
-      // 3. Message is to everyone (group chat messages)
-      return msg.recipient === 'everyone' ||
-             msg.recipient === agentId ||
-             msg.sender === agentId;
+      // 1. Message is from the user (to everyone, to this agent, or to anyone)
+      // 2. Message is from this specific agent (their own previous responses)
+      // Exclude: Messages from OTHER agents (prevents consecutive assistant messages in API)
+      return msg.sender === 'user' || msg.sender === agentId;
     })
     .map(msg => ({
       role: msg.sender === 'user' ? 'user' : 'assistant',
