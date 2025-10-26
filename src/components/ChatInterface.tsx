@@ -116,21 +116,26 @@ const ChatInterface = () => {
       if (recipient === "everyone") {
         // Group conversation mode - both agents respond
         for (const agent of agents) {
-          const response = await getAgentResponse(agent);
+          try {
+            const response = await getAgentResponse(agent);
 
-          // Add response to the original conversation mode, not the current one
-          const newMessage: Message = {
-            id: Date.now().toString(),
-            sender: agent.id,
-            recipient: "everyone",
-            content: response,
-            timestamp: Date.now(),
-          };
-          conversationManager.addMessageToMode(messageConversationMode, newMessage);
-          saveConversationState();
+            // Add response to the original conversation mode, not the current one
+            const newMessage: Message = {
+              id: Date.now().toString(),
+              sender: agent.id,
+              recipient: "everyone",
+              content: response,
+              timestamp: Date.now(),
+            };
+            conversationManager.addMessageToMode(messageConversationMode, newMessage);
+            saveConversationState();
 
-          // Small delay between responses for natural flow
-          await new Promise(resolve => setTimeout(resolve, 500));
+            // Small delay between responses for natural flow
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error) {
+            // Continue to next agent even if this one fails
+            console.error(`Error getting response from ${agent.name}:`, error);
+          }
         }
       } else {
         // Private conversation mode - only the selected agent responds
