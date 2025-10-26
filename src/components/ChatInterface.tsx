@@ -18,6 +18,9 @@ const ChatInterface = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
+  const [isAutoChatActive, setIsAutoChatActive] = useState(false);
+  const [autoChatRounds, setAutoChatRounds] = useState(3); // Number of rounds for auto-chat
+  const autoChatAbortRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -99,14 +102,12 @@ const ChatInterface = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isAutoChatActive) return;
 
     const userMessage = input.trim();
     setInput("");
-    setIsLoading(true);
 
     // Capture the conversation mode at the time of sending
-    // This ensures responses go to the correct conversation even if the user switches tabs
     const messageConversationMode = conversationMode;
 
     // Add user message to the current conversation
@@ -114,42 +115,15 @@ const ChatInterface = () => {
 
     try {
       if (recipient === "everyone") {
-        // Group conversation mode - both agents respond in parallel
-        // IMPORTANT: Get all responses BEFORE adding any to the conversation
-        // This prevents later agents from seeing earlier agents' responses
-        const responses = await Promise.all(
-          agents.map(async (agent) => {
-            const response = await getAgentResponse(agent);
-            return { agent, response };
-          })
-        );
-
-        // Now add all responses to the conversation with slight delays for natural flow
-        for (let i = 0; i < responses.length; i++) {
-          const { agent, response } = responses[i];
-
-          const newMessage: Message = {
-            id: Date.now().toString() + i, // Ensure unique IDs
-            sender: agent.id,
-            recipient: "everyone",
-            content: response,
-            timestamp: Date.now() + i, // Slight timestamp offset for ordering
-          };
-          conversationManager.addMessageToMode(messageConversationMode, newMessage);
-          saveConversationState();
-
-          // Small delay between responses for natural flow (except after the last one)
-          if (i < responses.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
+        // Start auto-chat: agents respond sequentially and continue conversing
+        await startAutoChat(messageConversationMode);
       } else {
         // Private conversation mode - only the selected agent responds
+        setIsLoading(true);
         const targetAgent = agents.find(a => a.id === recipient);
         if (targetAgent) {
           const response = await getAgentResponse(targetAgent);
 
-          // Add response to the original conversation mode, not the current one
           const newMessage: Message = {
             id: Date.now().toString(),
             sender: targetAgent.id,
@@ -160,12 +134,71 @@ const ChatInterface = () => {
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
           saveConversationState();
         }
+        setIsLoading(false);
       }
     } catch (error) {
       console.error("Error getting AI response:", error);
-    } finally {
       setIsLoading(false);
     }
+  };
+
+  const startAutoChat = async (messageConversationMode: ConversationMode) => {
+    if (isAutoChatActive || agents.length === 0) return;
+
+    setIsAutoChatActive(true);
+    autoChatAbortRef.current = false;
+
+    try {
+      // Run multiple rounds of conversation
+      for (let round = 0; round < autoChatRounds; round++) {
+        if (autoChatAbortRef.current) break;
+
+        // Each agent takes a turn to respond
+        for (let i = 0; i < agents.length; i++) {
+          if (autoChatAbortRef.current) break;
+
+          const agent = agents[i];
+          const messages = conversationManager.getMessagesForAgent(agent.id);
+
+          // Skip if the last message was from this same agent (prevent double responses)
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage && lastMessage.sender === agent.id) {
+            continue;
+          }
+
+          try {
+            setIsLoading(true);
+            const response = await getAgentResponse(agent);
+            setIsLoading(false);
+
+            const newMessage: Message = {
+              id: Date.now().toString() + `-${round}-${i}`,
+              sender: agent.id,
+              recipient: "everyone",
+              content: response,
+              timestamp: Date.now(),
+            };
+
+            conversationManager.addMessageToMode(messageConversationMode, newMessage);
+            saveConversationState();
+
+            // Small delay between agent responses for readability
+            await new Promise(resolve => setTimeout(resolve, 800));
+          } catch (error) {
+            console.error(`Error getting response from ${agent.name}:`, error);
+            // Continue with next agent even if this one fails
+          }
+        }
+      }
+    } finally {
+      setIsLoading(false);
+      setIsAutoChatActive(false);
+      autoChatAbortRef.current = false;
+    }
+  };
+
+  const stopAutoChat = () => {
+    autoChatAbortRef.current = true;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -253,7 +286,28 @@ const ChatInterface = () => {
         {isLoading && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <div className="animate-pulse">💭</div>
-            <span className="text-sm">Thinking...</span>
+            <span className="text-sm">
+              {isAutoChatActive ? 'Auto-chatting...' : 'Thinking...'}
+            </span>
+          </div>
+        )}
+
+        {isAutoChatActive && (
+          <div className="flex items-center justify-center gap-3 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-center gap-2">
+              <div className="animate-pulse text-lg">💬</div>
+              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                Auto-chat in progress...
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={stopAutoChat}
+              className="bg-white dark:bg-gray-800"
+            >
+              Stop
+            </Button>
           </div>
         )}
         
@@ -275,16 +329,18 @@ const ChatInterface = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={
-              recipient === "everyone" 
-                ? "Message everyone..." 
-                : `Whisper to ${getAgentInfo(recipient)?.name}...`
+              isAutoChatActive
+                ? "Auto-chat in progress..."
+                : recipient === "everyone"
+                  ? "Message everyone..."
+                  : `Whisper to ${getAgentInfo(recipient)?.name}...`
             }
             className="min-h-[80px] resize-none"
-            disabled={isLoading}
+            disabled={isLoading || isAutoChatActive}
           />
           <Button
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isAutoChatActive}
             size="icon"
             className="self-end h-[80px] w-[80px]"
           >
