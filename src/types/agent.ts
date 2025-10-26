@@ -5,7 +5,7 @@ export type AnthropicModel = 'claude-3-5-sonnet-20241022' | 'claude-3-5-haiku-20
 export type GoogleModel = 'gemini-2.0-flash-exp' | 'gemini-1.5-pro' | 'gemini-1.5-flash';
 export type XAIModel = 'grok-beta' | 'grok-vision-beta';
 
-export type OllamaModel = 'llama3' | 'llama3.1' | 'mistral' | 'phi3' | 'qwen2.5';
+export type OllamaModel = 'llama3' | 'llama3.1' | 'llama3.2' | 'mistral' | 'phi3' | 'qwen2.5';
 
 export type ModelType = OpenAIModel | AnthropicModel | GoogleModel | XAIModel | OllamaModel;
 
@@ -56,7 +56,7 @@ export const PROVIDER_MODELS: Record<ApiProvider, ModelType[]> = {
   anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
   google: ['gemini-2.0-flash-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   xai: ['grok-beta', 'grok-vision-beta'],
-  ollama: ['llama3', 'llama3.1', 'mistral', 'phi3', 'qwen2.5'],
+  ollama: ['llama3', 'llama3.1', 'llama3.2', 'mistral', 'phi3', 'qwen2.5'],
 };
 
 export const PROVIDER_LABELS: Record<ApiProvider, string> = {
