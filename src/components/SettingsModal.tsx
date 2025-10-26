@@ -19,9 +19,11 @@ interface SettingsModalProps {
   onOpenChange: (open: boolean) => void;
   agents: AgentConfig[];
   onAgentsChange: (agents: AgentConfig[]) => void;
+  autoChatRounds?: number;
+  onAutoChatRoundsChange?: (rounds: number) => void;
 }
 
-const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsModalProps) => {
+const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange, autoChatRounds = 3, onAutoChatRoundsChange }: SettingsModalProps) => {
   const { toast } = useToast();
   const [editedAgents, setEditedAgents] = useState<AgentConfig[]>(agents);
 
@@ -149,6 +151,32 @@ const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsM
                   }}
                 />
                 <p className="text-xs text-muted-foreground">Used when Local Mode is enabled or for Ollama providers without a custom base URL.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Auto Chat Settings</h3>
+              <div className="space-y-2">
+                <label htmlFor="auto-chat-rounds" className="text-sm">Number of Conversation Rounds</label>
+                <Input
+                  id="auto-chat-rounds"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={autoChatRounds}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 3;
+                    const clampedValue = Math.max(1, Math.min(10, value));
+                    if (onAutoChatRoundsChange) {
+                      onAutoChatRoundsChange(clampedValue);
+                      localStorage.setItem('coffeehouse-auto-chat-rounds', clampedValue.toString());
+                    }
+                  }}
+                  className="w-32"
+                />
+                <p className="text-xs text-muted-foreground">
+                  When Auto Chat is enabled, agents will have this many rounds of back-and-forth conversation (1-10 rounds).
+                </p>
               </div>
             </div>
 

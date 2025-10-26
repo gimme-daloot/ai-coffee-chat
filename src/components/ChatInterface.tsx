@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Settings } from "lucide-react";
+import { Send, Settings, MessagesSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import MessageBubble from "./MessageBubble";
@@ -18,6 +18,8 @@ const ChatInterface = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
+  const [isAutoChat, setIsAutoChat] = useState(false);
+  const [autoChatRounds, setAutoChatRounds] = useState(3); // Number of back-and-forth rounds
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -41,6 +43,13 @@ const ChatInterface = () => {
       } catch (e) {
         console.error("Failed to load conversation states:", e);
       }
+    }
+
+    // Load auto chat rounds from localStorage
+    const storedRounds = localStorage.getItem("coffeehouse-auto-chat-rounds");
+    if (storedRounds) {
+      const rounds = parseInt(storedRounds) || 3;
+      setAutoChatRounds(Math.max(1, Math.min(10, rounds)));
     }
   }, [conversationManager]);
 
@@ -114,33 +123,43 @@ const ChatInterface = () => {
 
     try {
       if (recipient === "everyone") {
-        // Group conversation mode - both agents respond in parallel
-        // IMPORTANT: Get all responses BEFORE adding any to the conversation
-        // This prevents later agents from seeing earlier agents' responses
-        const responses = await Promise.all(
-          agents.map(async (agent) => {
-            const response = await getAgentResponse(agent);
-            return { agent, response };
-          })
-        );
+        // Group conversation mode - agents respond in parallel within each round
+        // If auto chat is enabled, agents will have multiple rounds of back-and-forth
+        const rounds = isAutoChat ? autoChatRounds : 1;
 
-        // Now add all responses to the conversation with slight delays for natural flow
-        for (let i = 0; i < responses.length; i++) {
-          const { agent, response } = responses[i];
+        for (let round = 0; round < rounds; round++) {
+          // IMPORTANT: Get all responses BEFORE adding any to the conversation
+          // This prevents agents from seeing each other's responses within the same round
+          const responses = await Promise.all(
+            agents.map(async (agent) => {
+              const response = await getAgentResponse(agent);
+              return { agent, response };
+            })
+          );
 
-          const newMessage: Message = {
-            id: Date.now().toString() + i, // Ensure unique IDs
-            sender: agent.id,
-            recipient: "everyone",
-            content: response,
-            timestamp: Date.now() + i, // Slight timestamp offset for ordering
-          };
-          conversationManager.addMessageToMode(messageConversationMode, newMessage);
-          saveConversationState();
+          // Now add all responses to the conversation with slight delays for natural flow
+          for (let i = 0; i < responses.length; i++) {
+            const { agent, response } = responses[i];
 
-          // Small delay between responses for natural flow (except after the last one)
-          if (i < responses.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const newMessage: Message = {
+              id: Date.now().toString() + round + i, // Ensure unique IDs
+              sender: agent.id,
+              recipient: "everyone",
+              content: response,
+              timestamp: Date.now() + (round * 1000) + i, // Timestamp offset for ordering
+            };
+            conversationManager.addMessageToMode(messageConversationMode, newMessage);
+            saveConversationState();
+
+            // Small delay between responses for natural flow (except after the last one in the last round)
+            if (round < rounds - 1 || i < responses.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+
+          // Longer delay between rounds for better readability
+          if (round < rounds - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
       } else {
@@ -205,15 +224,42 @@ const ChatInterface = () => {
               Private: {getAgentInfo(conversationMode)?.emoji} {getAgentInfo(conversationMode)?.name}
             </span>
           )}
+          {conversationMode === 'group' && isAutoChat && (
+            <span className="text-sm px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-100 border border-blue-300 dark:border-blue-700 animate-pulse">
+              Auto Chat Active ({autoChatRounds} rounds)
+            </span>
+          )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowSettings(true)}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Settings className="h-5 w-5" />
-        </Button>
+        <div className="flex items-center gap-2">
+          {conversationMode === 'group' && (
+            <Button
+              variant={isAutoChat ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setIsAutoChat(!isAutoChat);
+                toast({
+                  title: isAutoChat ? "Auto Chat Disabled" : "Auto Chat Enabled",
+                  description: isAutoChat
+                    ? "Agents will respond once to your messages"
+                    : `Agents will have ${autoChatRounds} rounds of conversation`,
+                });
+              }}
+              className="text-sm"
+              disabled={isLoading}
+            >
+              {isAutoChat ? <Square className="h-4 w-4 mr-2" /> : <MessagesSquare className="h-4 w-4 mr-2" />}
+              {isAutoChat ? "Stop Auto" : "Auto Chat"}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowSettings(true)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Settings className="h-5 w-5" />
+          </Button>
+        </div>
       </header>
 
       {/* Messages */}
@@ -293,14 +339,16 @@ const ChatInterface = () => {
         </div>
       </div>
 
-      <SettingsModal 
-        open={showSettings} 
+      <SettingsModal
+        open={showSettings}
         onOpenChange={setShowSettings}
         agents={agents}
         onAgentsChange={(newAgents) => {
           setAgents(newAgents);
           localStorage.setItem("coffeehouse-agents", JSON.stringify(newAgents));
         }}
+        autoChatRounds={autoChatRounds}
+        onAutoChatRoundsChange={setAutoChatRounds}
       />
     </div>
   );
