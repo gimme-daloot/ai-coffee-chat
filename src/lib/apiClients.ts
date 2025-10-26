@@ -24,7 +24,7 @@ function getLocalModeConfig(): { enabled: boolean; baseUrl?: string } {
 }
 
 function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMessage[] {
-  return messages
+  const filtered = messages
     .filter(msg => {
       // Include messages where:
       // 1. This agent is the recipient (messages TO this agent)
@@ -35,9 +35,26 @@ function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMe
              msg.sender === agentId;
     })
     .map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'assistant',
+      // Messages from THIS agent are 'assistant' messages
+      // Messages from the user OR other agents are 'user' messages
+      // This ensures proper conversation flow for the API
+      role: msg.sender === agentId ? 'assistant' : 'user',
       content: msg.content,
     }));
+
+  // Check for consecutive assistant messages (API violation)
+  for (let i = 1; i < filtered.length; i++) {
+    if (filtered[i].role === 'assistant' && filtered[i-1].role === 'assistant') {
+      console.error(`[API Debug] CONSECUTIVE ASSISTANT MESSAGES for ${agentId} at index ${i}:`, {
+        previous: filtered[i-1],
+        current: filtered[i],
+        allMessages: filtered,
+      });
+    }
+  }
+
+  console.log(`[API Debug] Messages for ${agentId}:`, filtered);
+  return filtered;
 }
 
 export async function callOpenAI(
@@ -164,16 +181,21 @@ export async function callAnthropic(
 
   const data = await response.json();
 
+  console.log(`[Anthropic API] Raw response for ${agent.name}:`, data);
+
   // Validate response has content
   if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+    console.error(`[Anthropic API] Empty response for ${agent.name}:`, data);
     throw new ApiError('Anthropic API returned empty response');
   }
 
   const text = data.content[0].text;
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    console.error(`[Anthropic API] Empty text for ${agent.name}:`, { text, fullContent: data.content[0] });
     throw new ApiError('Anthropic API returned empty text content');
   }
 
+  console.log(`[Anthropic API] Response text for ${agent.name}:`, text);
   return text;
 }
 
