@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,9 +25,27 @@ const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsM
   const { toast } = useToast();
   const [editedAgents, setEditedAgents] = useState<AgentConfig[]>(agents);
 
+  // Sync editedAgents when modal opens or agents change
+  useEffect(() => {
+    if (open) {
+      setEditedAgents(agents);
+    }
+  }, [open, agents]);
+
+  const handleClearConversations = () => {
+    localStorage.removeItem("coffeehouse-conversations");
+    localStorage.removeItem("coffeehouse-conversation-mode");
+    toast({
+      title: "Conversations Cleared",
+      description: "Refresh the page to start fresh. All chat history has been deleted.",
+    });
+  };
+
   const handleResetOnboarding = () => {
     localStorage.removeItem("coffeehouse-onboarded");
     localStorage.removeItem("coffeehouse-agents");
+    localStorage.removeItem("coffeehouse-conversations");
+    localStorage.removeItem("coffeehouse-conversation-mode");
     toast({
       title: "Reset Complete",
       description: "Refresh the page to see the onboarding screen again.",
@@ -144,6 +162,16 @@ const SettingsModal = ({ open, onOpenChange, agents, onAgentsChange }: SettingsM
 
             <div className="space-y-2">
               <h3 className="text-sm font-semibold">Reset</h3>
+              <Button
+                variant="outline"
+                onClick={handleClearConversations}
+                className="w-full"
+              >
+                Clear All Conversations
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Delete all chat history and start fresh (refresh required).
+              </p>
               <Button
                 variant="outline"
                 onClick={handleResetOnboarding}
