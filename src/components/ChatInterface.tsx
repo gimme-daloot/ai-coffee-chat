@@ -19,7 +19,7 @@ const ChatInterface = () => {
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
   const [isAutoChat, setIsAutoChat] = useState(false);
-  const [autoChatInterval, setAutoChatInterval] = useState<number | null>(null);
+  const autoChatActive = useRef(false); // Use ref for reliable closure behavior
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -58,11 +58,9 @@ const ChatInterface = () => {
   // Cleanup auto-chat on unmount
   useEffect(() => {
     return () => {
-      if (autoChatInterval) {
-        clearInterval(autoChatInterval);
-      }
+      autoChatActive.current = false;
     };
-  }, [autoChatInterval]);
+  }, []);
 
   const addMessage = (sender: string, recipient: string, content: string) => {
     const newMessage: Message = {
@@ -271,10 +269,17 @@ const ChatInterface = () => {
 
   // Run auto-chat loop
   const runAutoChat = async () => {
-    if (!isAutoChat || isLoading) return;
+    // Check ref instead of state to avoid closure issues
+    if (!autoChatActive.current || isLoading) {
+      console.log('[AutoChat] Skipping - autoChatActive:', autoChatActive.current, 'isLoading:', isLoading);
+      return;
+    }
+
+    console.log('[AutoChat] Starting iteration');
 
     try {
       const nextSpeaker = determineNextSpeaker();
+      console.log('[AutoChat] Next speaker:', nextSpeaker);
 
       // If next speaker is 'user', pause auto-chat
       if (nextSpeaker === 'user') {
@@ -287,8 +292,12 @@ const ChatInterface = () => {
       }
 
       const agent = agents.find(a => a.id === nextSpeaker);
-      if (!agent) return;
+      if (!agent) {
+        console.log('[AutoChat] No agent found for:', nextSpeaker);
+        return;
+      }
 
+      console.log('[AutoChat] Agent responding:', agent.name);
       setIsLoading(true);
 
       // Get agent response
@@ -308,12 +317,11 @@ const ChatInterface = () => {
       setIsLoading(false);
 
       // Wait 2-3 seconds before next message
-      if (isAutoChat) {
+      if (autoChatActive.current) {
         const delay = 2000 + Math.random() * 1000; // 2-3 seconds
+        console.log('[AutoChat] Scheduling next iteration in', delay, 'ms');
         setTimeout(() => {
-          if (isAutoChat) {
-            runAutoChat();
-          }
+          runAutoChat();
         }, delay);
       }
     } catch (error) {
@@ -342,6 +350,8 @@ const ChatInterface = () => {
       return;
     }
 
+    console.log('[AutoChat] Starting auto-chat');
+    autoChatActive.current = true;
     setIsAutoChat(true);
     toast({
       title: "Auto-Chat Started",
@@ -353,11 +363,9 @@ const ChatInterface = () => {
   };
 
   const stopAutoChat = () => {
+    console.log('[AutoChat] Stopping auto-chat');
+    autoChatActive.current = false;
     setIsAutoChat(false);
-    if (autoChatInterval) {
-      clearInterval(autoChatInterval);
-      setAutoChatInterval(null);
-    }
   };
 
   return (
