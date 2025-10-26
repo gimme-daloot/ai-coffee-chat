@@ -19,8 +19,8 @@ const ChatInterface = () => {
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
   const [isAutoChat, setIsAutoChat] = useState(false);
-  const [autoChatRounds, setAutoChatRounds] = useState(3); // Number of back-and-forth rounds
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const shouldStopAutoChat = useRef(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -43,13 +43,6 @@ const ChatInterface = () => {
       } catch (e) {
         console.error("Failed to load conversation states:", e);
       }
-    }
-
-    // Load auto chat rounds from localStorage
-    const storedRounds = localStorage.getItem("coffeehouse-auto-chat-rounds");
-    if (storedRounds) {
-      const rounds = parseInt(storedRounds) || 3;
-      setAutoChatRounds(Math.max(1, Math.min(10, rounds)));
     }
   }, [conversationManager]);
 
@@ -124,10 +117,12 @@ const ChatInterface = () => {
     try {
       if (recipient === "everyone") {
         // Group conversation mode - agents respond in parallel within each round
-        // If auto chat is enabled, agents will have multiple rounds of back-and-forth
-        const rounds = isAutoChat ? autoChatRounds : 1;
+        // If auto chat is enabled, agents will continue indefinitely until stopped
+        shouldStopAutoChat.current = false;
+        let round = 0;
 
-        for (let round = 0; round < rounds; round++) {
+        // Loop continues indefinitely when auto chat is enabled, or runs once for manual mode
+        while (true) {
           // IMPORTANT: Get all responses BEFORE adding any to the conversation
           // This prevents agents from seeing each other's responses within the same round
           const responses = await Promise.all(
@@ -149,18 +144,25 @@ const ChatInterface = () => {
               timestamp: Date.now() + (round * 1000) + i, // Timestamp offset for ordering
             };
             conversationManager.addMessageToMode(messageConversationMode, newMessage);
-            saveConversationState();
 
-            // Small delay between responses for natural flow (except after the last one in the last round)
-            if (round < rounds - 1 || i < responses.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 500));
+            // Small delay between responses for natural flow
+            if (i < responses.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 300));
             }
           }
 
-          // Longer delay between rounds for better readability
-          if (round < rounds - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+          // Save state once per round for better performance
+          saveConversationState();
+
+          round++;
+
+          // Check if we should stop: either auto chat is disabled or user clicked stop
+          if (!isAutoChat || shouldStopAutoChat.current) {
+            break;
           }
+
+          // Longer delay between rounds for better readability
+          await new Promise(resolve => setTimeout(resolve, 800));
         }
       } else {
         // Private conversation mode - only the selected agent responds
@@ -224,32 +226,52 @@ const ChatInterface = () => {
               Private: {getAgentInfo(conversationMode)?.emoji} {getAgentInfo(conversationMode)?.name}
             </span>
           )}
-          {conversationMode === 'group' && isAutoChat && (
+          {conversationMode === 'group' && isAutoChat && isLoading && (
             <span className="text-sm px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-100 border border-blue-300 dark:border-blue-700 animate-pulse">
-              Auto Chat Active ({autoChatRounds} rounds)
+              Auto Chat Running...
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {conversationMode === 'group' && (
-            <Button
-              variant={isAutoChat ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setIsAutoChat(!isAutoChat);
-                toast({
-                  title: isAutoChat ? "Auto Chat Disabled" : "Auto Chat Enabled",
-                  description: isAutoChat
-                    ? "Agents will respond once to your messages"
-                    : `Agents will have ${autoChatRounds} rounds of conversation`,
-                });
-              }}
-              className="text-sm"
-              disabled={isLoading}
-            >
-              {isAutoChat ? <Square className="h-4 w-4 mr-2" /> : <MessagesSquare className="h-4 w-4 mr-2" />}
-              {isAutoChat ? "Stop Auto" : "Auto Chat"}
-            </Button>
+            <>
+              {isLoading && isAutoChat ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    shouldStopAutoChat.current = true;
+                    toast({
+                      title: "Stopping Auto Chat",
+                      description: "Auto chat will stop after the current round",
+                    });
+                  }}
+                  className="text-sm"
+                >
+                  <Square className="h-4 w-4 mr-2" />
+                  Stop Auto Chat
+                </Button>
+              ) : (
+                <Button
+                  variant={isAutoChat ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setIsAutoChat(!isAutoChat);
+                    toast({
+                      title: isAutoChat ? "Auto Chat Disabled" : "Auto Chat Enabled",
+                      description: isAutoChat
+                        ? "Agents will respond once to your messages"
+                        : "Agents will continue chatting until you stop them",
+                    });
+                  }}
+                  className="text-sm"
+                  disabled={isLoading}
+                >
+                  {isAutoChat ? <Square className="h-4 w-4 mr-2" /> : <MessagesSquare className="h-4 w-4 mr-2" />}
+                  {isAutoChat ? "Disable Auto" : "Auto Chat"}
+                </Button>
+              )}
+            </>
           )}
           <Button
             variant="ghost"
@@ -347,8 +369,6 @@ const ChatInterface = () => {
           setAgents(newAgents);
           localStorage.setItem("coffeehouse-agents", JSON.stringify(newAgents));
         }}
-        autoChatRounds={autoChatRounds}
-        onAutoChatRoundsChange={setAutoChatRounds}
       />
     </div>
   );
