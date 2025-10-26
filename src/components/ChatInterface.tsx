@@ -77,26 +77,29 @@ const ChatInterface = () => {
     localStorage.setItem("coffeehouse-conversation-mode", conversationMode);
   };
 
-  const getAgentResponse = async (agent: AgentConfig) => {
+  const getAgentResponse = async (agent: AgentConfig, skipErrorToast = false) => {
     try {
       const agentMessages = conversationManager.getMessagesForAgent(agent.id);
       const response = await callAgent(agent, agentMessages);
       return response;
     } catch (error) {
-      if (error instanceof ApiError) {
-        toast({
-          title: `${agent.name} Error`,
-          description: error.message,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: `${agent.name} Error`,
-          description: "Failed to get response. Please check your API key and try again.",
-          variant: "destructive",
-        });
+      if (!skipErrorToast) {
+        if (error instanceof ApiError) {
+          toast({
+            title: `${agent.name} Error`,
+            description: error.message,
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: `${agent.name} Error`,
+            description: "Failed to get response. Please check your API key and try again.",
+            variant: "destructive",
+          });
+        }
       }
-      throw error;
+      // Return empty string instead of throwing - this prevents one agent error from breaking auto chat
+      return "";
     }
   };
 
@@ -127,7 +130,9 @@ const ChatInterface = () => {
           // This prevents agents from seeing each other's responses within the same round
           const responses = await Promise.all(
             agents.map(async (agent) => {
-              const response = await getAgentResponse(agent);
+              // Skip error toasts after first round in auto chat to prevent spam
+              const skipToast = isAutoChat && round > 0;
+              const response = await getAgentResponse(agent, skipToast);
               return { agent, response };
             })
           );
@@ -135,6 +140,11 @@ const ChatInterface = () => {
           // Now add all responses to the conversation with slight delays for natural flow
           for (let i = 0; i < responses.length; i++) {
             const { agent, response } = responses[i];
+
+            // Skip empty responses (from errors)
+            if (!response || !response.trim()) {
+              continue;
+            }
 
             const newMessage: Message = {
               id: Date.now().toString() + round + i, // Ensure unique IDs
