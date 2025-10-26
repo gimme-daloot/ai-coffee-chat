@@ -87,9 +87,29 @@ export class ConversationStateManager {
       const allMessages = [...privateMessages, ...groupMessages];
       allMessages.sort((a, b) => a.timestamp - b.timestamp);
 
+      console.log(`[ConversationManager] Messages for ${agentId} in group mode:`, {
+        privateCount: privateMessages.length,
+        groupCount: groupMessages.length,
+        totalCount: allMessages.length,
+        messages: allMessages.map(m => ({
+          sender: m.sender,
+          recipient: m.recipient,
+          content: m.content.substring(0, 50) + '...',
+        })),
+      });
+
       return allMessages;
     } else if (this.currentMode === agentId) {
-      return this.getMessages(agentId);
+      const messages = this.getMessages(agentId);
+      console.log(`[ConversationManager] Messages for ${agentId} in private mode:`, {
+        count: messages.length,
+        messages: messages.map(m => ({
+          sender: m.sender,
+          recipient: m.recipient,
+          content: m.content.substring(0, 50) + '...',
+        })),
+      });
+      return messages;
     }
     return [];
   }
