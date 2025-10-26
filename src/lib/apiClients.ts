@@ -26,8 +26,13 @@ function getLocalModeConfig(): { enabled: boolean; baseUrl?: string } {
 function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMessage[] {
   return messages
     .filter(msg => {
-      // Include messages where this agent is the recipient or everyone
-      return msg.recipient === 'everyone' || msg.recipient === agentId;
+      // Include messages where:
+      // 1. This agent is the recipient (messages TO this agent)
+      // 2. This agent is the sender (messages FROM this agent - preserves context)
+      // 3. Message is to everyone (group chat messages)
+      return msg.recipient === 'everyone' ||
+             msg.recipient === agentId ||
+             msg.sender === agentId;
     })
     .map(msg => ({
       role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -40,7 +45,7 @@ export async function callOpenAI(
   messages: Message[]
 ): Promise<string> {
   const apiMessages = convertMessagesToApiFormat(messages, agent.id);
-  
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -67,7 +72,18 @@ export async function callOpenAI(
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+
+  // Validate response has content
+  if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+    throw new ApiError('OpenAI API returned empty response');
+  }
+
+  const content = data.choices[0].message.content;
+  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    throw new ApiError('OpenAI API returned empty text content');
+  }
+
+  return content;
 }
 
 export async function callOllama(
@@ -107,8 +123,14 @@ export async function callOllama(
   }
 
   const data = await response.json();
+
   // Ollama returns { message: { content: string } }
-  return data?.message?.content || '';
+  const content = data?.message?.content;
+  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    throw new ApiError('Ollama API returned empty text content');
+  }
+
+  return content;
 }
 
 export async function callAnthropic(
@@ -141,7 +163,18 @@ export async function callAnthropic(
   }
 
   const data = await response.json();
-  return data.content[0].text;
+
+  // Validate response has content
+  if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+    throw new ApiError('Anthropic API returned empty response');
+  }
+
+  const text = data.content[0].text;
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    throw new ApiError('Anthropic API returned empty text content');
+  }
+
+  return text;
 }
 
 export async function callGoogle(
@@ -184,7 +217,18 @@ export async function callGoogle(
   }
 
   const data = await response.json();
-  return data.candidates[0].content.parts[0].text;
+
+  // Validate response has content
+  if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+    throw new ApiError('Google API returned empty response');
+  }
+
+  const text = data.candidates[0].content?.parts?.[0]?.text;
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    throw new ApiError('Google API returned empty text content');
+  }
+
+  return text;
 }
 
 export async function callXAI(
@@ -192,7 +236,7 @@ export async function callXAI(
   messages: Message[]
 ): Promise<string> {
   const apiMessages = convertMessagesToApiFormat(messages, agent.id);
-  
+
   const response = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -219,7 +263,18 @@ export async function callXAI(
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+
+  // Validate response has content
+  if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+    throw new ApiError('xAI API returned empty response');
+  }
+
+  const content = data.choices[0].message.content;
+  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    throw new ApiError('xAI API returned empty text content');
+  }
+
+  return content;
 }
 
 export async function callAgent(
