@@ -78,7 +78,15 @@ export class ConversationStateManager {
    * In private mode: returns messages from the private conversation with that agent
    */
   getMessagesForAgent(agentId: string): Message[] {
-    if (this.currentMode === 'group') {
+    return this.getMessagesForAgentInMode(agentId, this.currentMode);
+  }
+
+  /**
+   * Get messages relevant to a specific agent in a specific conversation mode
+   * This is useful when you need to get messages for a mode that isn't currently active
+   */
+  getMessagesForAgentInMode(agentId: string, mode: ConversationMode): Message[] {
+    if (mode === 'group') {
       // In group mode, agent needs access to both their private history AND group history
       const privateMessages = this.getMessages(agentId);
       const groupMessages = this.getMessages('group');
@@ -88,7 +96,7 @@ export class ConversationStateManager {
       allMessages.sort((a, b) => a.timestamp - b.timestamp);
 
       return allMessages;
-    } else if (this.currentMode === agentId) {
+    } else if (mode === agentId) {
       return this.getMessages(agentId);
     }
     return [];

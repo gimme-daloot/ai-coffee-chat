@@ -75,9 +75,9 @@ const ChatInterface = () => {
     localStorage.setItem("coffeehouse-conversation-mode", conversationMode);
   };
 
-  const getAgentResponse = async (agent: AgentConfig) => {
+  const getAgentResponse = async (agent: AgentConfig, conversationModeForResponse: ConversationMode) => {
     try {
-      const agentMessages = conversationManager.getMessagesForAgent(agent.id);
+      const agentMessages = conversationManager.getMessagesForAgentInMode(agent.id, conversationModeForResponse);
       const response = await callAgent(agent, agentMessages);
       return response;
     } catch (error) {
@@ -117,7 +117,7 @@ const ChatInterface = () => {
         // Group conversation mode - both agents respond
         for (const agent of agents) {
           try {
-            const response = await getAgentResponse(agent);
+            const response = await getAgentResponse(agent, messageConversationMode);
 
             // Add response to the original conversation mode, not the current one
             const newMessage: Message = {
@@ -141,7 +141,7 @@ const ChatInterface = () => {
         // Private conversation mode - only the selected agent responds
         const targetAgent = agents.find(a => a.id === recipient);
         if (targetAgent) {
-          const response = await getAgentResponse(targetAgent);
+          const response = await getAgentResponse(targetAgent, messageConversationMode);
 
           // Add response to the original conversation mode, not the current one
           const newMessage: Message = {
