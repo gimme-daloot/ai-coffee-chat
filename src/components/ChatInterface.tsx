@@ -114,23 +114,34 @@ const ChatInterface = () => {
 
     try {
       if (recipient === "everyone") {
-        // Group conversation mode - both agents respond
-        for (const agent of agents) {
-          const response = await getAgentResponse(agent);
+        // Group conversation mode - both agents respond in parallel
+        // IMPORTANT: Get all responses BEFORE adding any to the conversation
+        // This prevents later agents from seeing earlier agents' responses
+        const responses = await Promise.all(
+          agents.map(async (agent) => {
+            const response = await getAgentResponse(agent);
+            return { agent, response };
+          })
+        );
 
-          // Add response to the original conversation mode, not the current one
+        // Now add all responses to the conversation with slight delays for natural flow
+        for (let i = 0; i < responses.length; i++) {
+          const { agent, response } = responses[i];
+
           const newMessage: Message = {
-            id: Date.now().toString(),
+            id: Date.now().toString() + i, // Ensure unique IDs
             sender: agent.id,
             recipient: "everyone",
             content: response,
-            timestamp: Date.now(),
+            timestamp: Date.now() + i, // Slight timestamp offset for ordering
           };
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
           saveConversationState();
 
-          // Small delay between responses for natural flow
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Small delay between responses for natural flow (except after the last one)
+          if (i < responses.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
         }
       } else {
         // Private conversation mode - only the selected agent responds
