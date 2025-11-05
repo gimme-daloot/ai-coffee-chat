@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <rect width="256" height="256" rx="32" fill="#3B2F2F"/>
+
+  <!-- Coffee cup -->
+  <path d="M80 90C80 80 85 75 95 75H161C171 75 176 80 176 90V150C176 165 165 175 150 175H106C91 175 80 165 80 150V90Z" fill="#8B6F47" stroke="#5D4E37" stroke-width="3"/>
+
+  <!-- Coffee liquid -->
+  <ellipse cx="128" cy="95" rx="40" ry="8" fill="#3E2723"/>
+  <path d="M88 95V130C88 145 98 155 113 155H143C158 155 168 145 168 130V95H88Z" fill="#5D4E37"/>
+
+  <!-- Coffee cup handle -->
+  <path d="M176 100C176 100 190 100 195 105C200 110 200 120 195 130C190 140 176 140 176 140" stroke="#8B6F47" stroke-width="8" stroke-linecap="round" fill="none"/>
+
+  <!-- Steam -->
+  <path d="M105 55C105 55 105 45 110 45C115 45 115 55 115 55" stroke="#D4A574" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.7"/>
+  <path d="M128 50C128 50 128 38 133 38C138 38 138 50 138 50" stroke="#D4A574" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.7"/>
+  <path d="M151 55C151 55 151 45 156 45C161 45 161 55 161 55" stroke="#D4A574" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.7"/>
+
+  <!-- Saucer -->
+  <ellipse cx="128" cy="180" rx="60" ry="12" fill="#A0826D"/>
+  <ellipse cx="128" cy="177" rx="60" ry="8" fill="#C9A87C"/>
+
+  <!-- AI sparkle -->
+  <circle cx="200" cy="60" r="18" fill="#6B9BD1" opacity="0.9"/>
+  <path d="M200 48 L200 72 M188 60 L212 60" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  <path d="M192 52 L208 68 M192 68 L208 52" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+</svg>

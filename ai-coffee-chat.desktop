@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AI Coffee Chat
+Comment=Launch AI Coffee Chat Application
+Exec=/home/user/ai-coffee-chat/launch-coffee-chat.sh
+Icon=/home/user/ai-coffee-chat/ai-coffee-chat-icon.svg
+Terminal=true
+Categories=Development;Network;
+StartupNotify=true
