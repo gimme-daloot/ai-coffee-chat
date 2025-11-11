@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { Send, Settings, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import MessageBubble from "./MessageBubble";
 import RecipientSelector from "./RecipientSelector";
 import SettingsModal from "./SettingsModal";
@@ -20,6 +21,8 @@ const ChatInterface = () => {
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
   const [messageVersion, setMessageVersion] = useState(0);
   const [autoConversationActive, setAutoConversationActive] = useState(false);
+  const [autoRoundLimit, setAutoRoundLimit] = useState<number | null>(null);
+  const [autoRoundCount, setAutoRoundCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const autoConversationActiveRef = useRef(false);
@@ -28,6 +31,9 @@ const ChatInterface = () => {
   const agentsRef = useRef<AgentConfig[]>([]);
   const conversationModeRef = useRef<ConversationMode>('group');
   const isLoadingRef = useRef(false);
+  const recipientRef = useRef<string>('everyone');
+  const autoRoundLimitRef = useRef<number | null>(null);
+  const autoRoundCountRef = useRef(0);
 
   useEffect(() => {
     // Load agents from localStorage
@@ -63,6 +69,18 @@ const ChatInterface = () => {
   useEffect(() => {
     isLoadingRef.current = isLoading;
   }, [isLoading]);
+
+  useEffect(() => {
+    recipientRef.current = recipient;
+  }, [recipient]);
+
+  useEffect(() => {
+    autoRoundLimitRef.current = autoRoundLimit;
+  }, [autoRoundLimit]);
+
+  useEffect(() => {
+    autoRoundCountRef.current = autoRoundCount;
+  }, [autoRoundCount]);
 
   useEffect(() => {
     return () => {
@@ -113,6 +131,13 @@ const ChatInterface = () => {
     }
   };
 
+  const notifyAutoConversationCompleted = (limit: number) => {
+    toast({
+      title: "Auto conversation complete",
+      description: `Reached ${limit} round${limit === 1 ? "" : "s"}.`,
+    });
+  };
+
   const scheduleAutoTurn = (delay = 1500) => {
     if (!autoConversationActiveRef.current) return;
     clearAutoConversationTimeout();
@@ -148,13 +173,17 @@ const ChatInterface = () => {
     setIsLoading(true);
 
     try {
-      if (conversationModeRef.current !== 'group' || recipient !== 'everyone') {
+      const currentRecipient = recipientRef.current;
+      if (conversationModeRef.current !== 'group' || currentRecipient !== 'everyone') {
         conversationManager.switchMode('group');
         setConversationMode('group');
         setRecipient('everyone');
+        recipientRef.current = 'everyone';
         conversationModeRef.current = 'group';
         localStorage.setItem("coffeehouse-conversation-mode", 'group');
       }
+
+      let anyResponses = false;
 
       for (let i = 0; i < currentAgents.length; i++) {
         if (!autoConversationActiveRef.current) {
@@ -175,9 +204,25 @@ const ChatInterface = () => {
         conversationManager.addMessageToMode('group', newMessage);
         setMessageVersion((prev) => prev + 1);
         saveConversationState('group');
+        anyResponses = true;
 
         if (i < currentAgents.length - 1 && autoConversationActiveRef.current) {
           await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+
+      if (anyResponses) {
+        autoRoundCountRef.current += 1;
+        setAutoRoundCount(autoRoundCountRef.current);
+
+        const limit = autoRoundLimitRef.current;
+        if (limit !== null && autoRoundCountRef.current >= limit) {
+          const wasActive = autoConversationActiveRef.current;
+          stopAutoConversation();
+          if (wasActive) {
+            notifyAutoConversationCompleted(limit);
+          }
+          return;
         }
       }
     } catch (error) {
@@ -204,11 +249,14 @@ const ChatInterface = () => {
 
     autoConversationActiveRef.current = true;
     setAutoConversationActive(true);
+    autoRoundCountRef.current = 0;
+    setAutoRoundCount(0);
 
     if (conversationModeRef.current !== 'group' || recipient !== 'everyone') {
       conversationManager.switchMode('group');
       setConversationMode('group');
       setRecipient('everyone');
+      recipientRef.current = 'everyone';
       conversationModeRef.current = 'group';
       localStorage.setItem("coffeehouse-conversation-mode", 'group');
     }
@@ -221,6 +269,35 @@ const ChatInterface = () => {
       stopAutoConversation();
     } else {
       startAutoConversation();
+    }
+  };
+
+  const handleAutoRoundLimitChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+
+    if (value === "") {
+      setAutoRoundLimit(null);
+      autoRoundLimitRef.current = null;
+      return;
+    }
+
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed)) {
+      return;
+    }
+
+    if (parsed <= 0) {
+      setAutoRoundLimit(null);
+      autoRoundLimitRef.current = null;
+      return;
+    }
+
+    setAutoRoundLimit(parsed);
+    autoRoundLimitRef.current = parsed;
+
+    if (autoConversationActiveRef.current && autoRoundCountRef.current >= parsed) {
+      stopAutoConversation();
+      notifyAutoConversationCompleted(parsed);
     }
   };
 
@@ -331,6 +408,7 @@ const ChatInterface = () => {
     }
 
     setRecipient(newRecipient);
+    recipientRef.current = newRecipient;
     
     // Switch conversation mode
     const newMode: ConversationMode = newRecipient === "everyone" ? "group" : newRecipient;
@@ -360,6 +438,9 @@ const ChatInterface = () => {
                 Private: {getAgentInfo(conversationMode)?.emoji} {getAgentInfo(conversationMode)?.name}
               </span>
             )}
+            <span className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground border border-border">
+              Rounds: {autoRoundCount}{autoRoundLimit !== null ? ` / ${autoRoundLimit}` : " / ∞"}
+            </span>
             {autoConversationActive && (
               <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
                 Auto conversation running
@@ -367,6 +448,18 @@ const ChatInterface = () => {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Limit</span>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                placeholder="∞"
+                value={autoRoundLimit !== null ? autoRoundLimit : ""}
+                onChange={handleAutoRoundLimitChange}
+                className="h-8 w-20"
+              />
+            </div>
             <Button
               variant={autoConversationActive ? "default" : "outline"}
               size="sm"
