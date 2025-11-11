@@ -57,24 +57,6 @@ function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMe
   return filtered;
 }
 
-function formatMessagesForHuggingFace(systemPrompt: string, messages: ApiMessage[]): string {
-  // Format messages into HuggingFace chat template format
-  let prompt = `<|system|>\n${systemPrompt}\n`;
-
-  for (const msg of messages) {
-    if (msg.role === 'user') {
-      prompt += `<|user|>\n${msg.content}\n`;
-    } else if (msg.role === 'assistant') {
-      prompt += `<|assistant|>\n${msg.content}\n`;
-    }
-  }
-
-  // Add final assistant tag to prompt for completion
-  prompt += '<|assistant|>\n';
-
-  return prompt;
-}
-
 export async function callOpenAI(
   agent: AgentConfig,
   messages: Message[]
@@ -323,27 +305,28 @@ export async function callHuggingFace(
 ): Promise<string> {
   const apiMessages = convertMessagesToApiFormat(messages, agent.id);
 
-  // Convert messages to HuggingFace format (concatenate into single prompt)
-  const prompt = formatMessagesForHuggingFace(agent.personality, apiMessages);
+  // Add system prompt as a system message
+  const messagesWithSystem = [
+    { role: 'system' as const, content: agent.personality },
+    ...apiMessages,
+  ];
 
-  const response = await fetch(
-    `https://api-inference.huggingface.co/models/${agent.model}`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${agent.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 300,
-          temperature: 0.9,
-          return_full_text: false,
-        },
-      }),
-    }
-  );
+  // Call the serverless proxy function instead of HuggingFace API directly
+  const response = await fetch('/api/huggingface', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: agent.model,
+      messages: messagesWithSystem,
+      apiKey: agent.apiKey,
+      parameters: {
+        max_new_tokens: 300,
+        temperature: 0.9,
+      }
+    }),
+  });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -355,12 +338,8 @@ export async function callHuggingFace(
 
   const result = await response.json();
 
-  // HuggingFace returns an array with generated_text
-  if (!result || !Array.isArray(result) || result.length === 0) {
-    throw new ApiError('HuggingFace API returned empty response');
-  }
-
-  const generatedText = result[0].generated_text;
+  // Validate response has content
+  const generatedText = result.generated_text;
   if (!generatedText || typeof generatedText !== 'string' || generatedText.trim().length === 0) {
     throw new ApiError('HuggingFace API returned empty text content');
   }
