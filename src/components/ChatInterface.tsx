@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Send, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,7 @@ const ChatInterface = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
+  const [messageVersion, setMessageVersion] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -48,7 +49,10 @@ const ChatInterface = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const currentMessages = conversationManager.getCurrentMessages();
+  const currentMessages = useMemo(
+    () => conversationManager.getCurrentMessages(),
+    [conversationManager, conversationMode, messageVersion]
+  );
   useEffect(() => {
     scrollToBottom();
   }, [conversationMode, currentMessages.length]);
@@ -62,17 +66,18 @@ const ChatInterface = () => {
       timestamp: Date.now(),
     };
     conversationManager.addMessage(newMessage);
-    
+    setMessageVersion((prev) => prev + 1);
+
     // Persist to localStorage
-    saveConversationState();
-    
+    saveConversationState(conversationManager.getCurrentMode());
+
     return newMessage;
   };
 
-  const saveConversationState = () => {
+  const saveConversationState = (mode: ConversationMode = conversationMode) => {
     const states = conversationManager.exportStates();
     localStorage.setItem("coffeehouse-conversations", JSON.stringify(states));
-    localStorage.setItem("coffeehouse-conversation-mode", conversationMode);
+    localStorage.setItem("coffeehouse-conversation-mode", mode);
   };
 
   const getAgentResponse = async (agent: AgentConfig) => {
@@ -114,51 +119,46 @@ const ChatInterface = () => {
 
     try {
       if (recipient === "everyone") {
-        // Group conversation mode - both agents respond in parallel
-        // IMPORTANT: Get all responses BEFORE adding any to the conversation
-        // This prevents later agents from seeing earlier agents' responses
-        const responses = await Promise.all(
-          agents.map(async (agent) => {
-            const response = await getAgentResponse(agent);
-            return { agent, response };
-          })
-        );
-
-        // Now add all responses to the conversation with slight delays for natural flow
-        for (let i = 0; i < responses.length; i++) {
-          const { agent, response } = responses[i];
+        // Group conversation mode - agents respond one after another so they can react to each other
+        for (let i = 0; i < agents.length; i++) {
+          const agent = agents[i];
+          const response = await getAgentResponse(agent);
+          const timestamp = Date.now();
 
           const newMessage: Message = {
-            id: Date.now().toString() + i, // Ensure unique IDs
+            id: `${timestamp}-${agent.id}-${i}`,
             sender: agent.id,
             recipient: "everyone",
             content: response,
-            timestamp: Date.now() + i, // Slight timestamp offset for ordering
+            timestamp: timestamp + i, // Slight offset keeps ordering deterministic
           };
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
-          saveConversationState();
+          setMessageVersion((prev) => prev + 1);
+          saveConversationState(messageConversationMode);
 
           // Small delay between responses for natural flow (except after the last one)
-          if (i < responses.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+          if (i < agents.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
           }
         }
       } else {
         // Private conversation mode - only the selected agent responds
-        const targetAgent = agents.find(a => a.id === recipient);
+        const targetAgent = agents.find((a) => a.id === recipient);
         if (targetAgent) {
           const response = await getAgentResponse(targetAgent);
+          const timestamp = Date.now();
 
           // Add response to the original conversation mode, not the current one
           const newMessage: Message = {
-            id: Date.now().toString(),
+            id: `${timestamp}-${targetAgent.id}`,
             sender: targetAgent.id,
             recipient: "user",
             content: response,
-            timestamp: Date.now(),
+            timestamp,
           };
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
-          saveConversationState();
+          setMessageVersion((prev) => prev + 1);
+          saveConversationState(messageConversationMode);
         }
       }
     } catch (error) {
