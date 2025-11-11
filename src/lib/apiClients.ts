@@ -57,6 +57,24 @@ function convertMessagesToApiFormat(messages: Message[], agentId: string): ApiMe
   return filtered;
 }
 
+function formatMessagesForHuggingFace(systemPrompt: string, messages: ApiMessage[]): string {
+  // Format messages into HuggingFace chat template format
+  let prompt = `<|system|>\n${systemPrompt}\n`;
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      prompt += `<|user|>\n${msg.content}\n`;
+    } else if (msg.role === 'assistant') {
+      prompt += `<|assistant|>\n${msg.content}\n`;
+    }
+  }
+
+  // Add final assistant tag to prompt for completion
+  prompt += '<|assistant|>\n';
+
+  return prompt;
+}
+
 export async function callOpenAI(
   agent: AgentConfig,
   messages: Message[]
@@ -299,6 +317,57 @@ export async function callXAI(
   return content;
 }
 
+export async function callHuggingFace(
+  agent: AgentConfig,
+  messages: Message[]
+): Promise<string> {
+  const apiMessages = convertMessagesToApiFormat(messages, agent.id);
+
+  // Convert messages to HuggingFace format (concatenate into single prompt)
+  const prompt = formatMessagesForHuggingFace(agent.personality, apiMessages);
+
+  const response = await fetch(
+    `https://api-inference.huggingface.co/models/${agent.model}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${agent.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 300,
+          temperature: 0.9,
+          return_full_text: false,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new ApiError(
+      errorData.error || `HuggingFace API error: ${response.status}`,
+      response.status
+    );
+  }
+
+  const result = await response.json();
+
+  // HuggingFace returns an array with generated_text
+  if (!result || !Array.isArray(result) || result.length === 0) {
+    throw new ApiError('HuggingFace API returned empty response');
+  }
+
+  const generatedText = result[0].generated_text;
+  if (!generatedText || typeof generatedText !== 'string' || generatedText.trim().length === 0) {
+    throw new ApiError('HuggingFace API returned empty text content');
+  }
+
+  return generatedText;
+}
+
 export async function callAgent(
   agent: AgentConfig,
   messages: Message[]
@@ -328,6 +397,8 @@ export async function callAgent(
       return callXAI(agent, messages);
     case 'ollama':
       return callOllama(agent, messages);
+    case 'huggingface':
+      return callHuggingFace(agent, messages);
     default:
       throw new ApiError(`Unsupported provider: ${agent.provider}`);
   }
