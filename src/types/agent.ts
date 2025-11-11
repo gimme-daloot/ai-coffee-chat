@@ -1,4 +1,4 @@
-export type ApiProvider = 'openai' | 'anthropic' | 'google' | 'xai' | 'ollama';
+export type ApiProvider = 'openai' | 'anthropic' | 'google' | 'xai' | 'ollama' | 'huggingface';
 
 export type OpenAIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-4-turbo' | 'gpt-3.5-turbo';
 export type AnthropicModel = 'claude-3-5-sonnet-20241022' | 'claude-3-5-haiku-20241022' | 'claude-3-opus-20240229';
@@ -7,7 +7,9 @@ export type XAIModel = 'grok-beta' | 'grok-vision-beta';
 
 export type OllamaModel = 'llama3' | 'llama3.1' | 'llama3.2' | 'mistral' | 'phi3' | 'qwen2.5';
 
-export type ModelType = OpenAIModel | AnthropicModel | GoogleModel | XAIModel | OllamaModel;
+export type HuggingFaceModel = 'TinyLlama/TinyLlama-1.1B-Chat-v1.0' | 'Qwen/Qwen2.5-0.5B-Instruct' | 'meta-llama/Llama-3.2-1B-Instruct';
+
+export type ModelType = OpenAIModel | AnthropicModel | GoogleModel | XAIModel | OllamaModel | HuggingFaceModel;
 
 export interface AgentConfig {
   id: string;
@@ -57,6 +59,7 @@ export const PROVIDER_MODELS: Record<ApiProvider, ModelType[]> = {
   google: ['gemini-2.0-flash-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   xai: ['grok-beta', 'grok-vision-beta'],
   ollama: ['llama3', 'llama3.1', 'llama3.2', 'mistral', 'phi3', 'qwen2.5'],
+  huggingface: ['TinyLlama/TinyLlama-1.1B-Chat-v1.0', 'Qwen/Qwen2.5-0.5B-Instruct', 'meta-llama/Llama-3.2-1B-Instruct'],
 };
 
 export const PROVIDER_LABELS: Record<ApiProvider, string> = {
@@ -65,4 +68,5 @@ export const PROVIDER_LABELS: Record<ApiProvider, string> = {
   google: 'Google',
   xai: 'xAI (Grok)',
   ollama: 'Ollama (local)',
+  huggingface: 'HuggingFace',
 };
