@@ -75,7 +75,7 @@ export async function callOpenAI(
         { role: 'system', content: agent.personality },
         ...apiMessages,
       ],
-      max_tokens: 150,
+      max_tokens: 300,
       temperature: 0.9,
     }),
   });
@@ -155,7 +155,7 @@ export async function callAnthropic(
   messages: Message[]
 ): Promise<string> {
   const apiMessages = convertMessagesToApiFormat(messages, agent.id);
-  
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -165,7 +165,7 @@ export async function callAnthropic(
     },
     body: JSON.stringify({
       model: agent.model,
-      max_tokens: 150,
+      max_tokens: 300,
       system: agent.personality,
       messages: apiMessages,
     }),
@@ -223,7 +223,7 @@ export async function callGoogle(
         },
         contents,
         generationConfig: {
-          maxOutputTokens: 150,
+          maxOutputTokens: 300,
           temperature: 0.9,
         },
       }),
@@ -271,7 +271,7 @@ export async function callXAI(
         { role: 'system', content: agent.personality },
         ...apiMessages,
       ],
-      max_tokens: 150,
+      max_tokens: 300,
       temperature: 0.9,
     }),
   });
