@@ -345,10 +345,19 @@ const ChatInterface = () => {
 
     try {
       if (recipient === "everyone") {
-        // Group conversation mode - agents respond one after another so they can react to each other
-        for (let i = 0; i < agents.length; i++) {
-          const agent = agents[i];
+        // Group conversation mode - get ALL agent responses in parallel FIRST
+        // This prevents agents from seeing each other's responses before generating their own
+        const responsePromises = agents.map(async (agent) => {
           const response = await getAgentResponse(agent);
+          return { agent, response };
+        });
+
+        // Wait for ALL responses to complete
+        const responses = await Promise.all(responsePromises);
+
+        // THEN add all responses to conversation
+        for (let i = 0; i < responses.length; i++) {
+          const { agent, response } = responses[i];
           const timestamp = Date.now();
 
           const newMessage: Message = {
@@ -363,8 +372,8 @@ const ChatInterface = () => {
           saveConversationState(messageConversationMode);
 
           // Small delay between responses for natural flow (except after the last one)
-          if (i < agents.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
+          if (i < responses.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
           }
         }
       } else {
