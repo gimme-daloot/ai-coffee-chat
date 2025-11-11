@@ -7,9 +7,10 @@ interface RecipientSelectorProps {
   onChange: (value: string) => void;
   agents: AgentConfig[];
   currentMode?: ConversationMode;
+  disabled?: boolean;
 }
 
-const RecipientSelector = ({ value, onChange, agents, currentMode }: RecipientSelectorProps) => {
+const RecipientSelector = ({ value, onChange, agents, currentMode, disabled }: RecipientSelectorProps) => {
   const getModeLabel = () => {
     if (currentMode === 'group') {
       return 'Group Chat';
@@ -30,8 +31,8 @@ const RecipientSelector = ({ value, onChange, agents, currentMode }: RecipientSe
           'Send to:'
         )}
       </span>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-[200px]">
+        <Select value={value} onValueChange={onChange} disabled={disabled}>
+          <SelectTrigger className="w-[200px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Settings } from "lucide-react";
+import { Send, Settings, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import MessageBubble from "./MessageBubble";
@@ -19,8 +19,15 @@ const ChatInterface = () => {
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
   const [messageVersion, setMessageVersion] = useState(0);
+  const [autoConversationActive, setAutoConversationActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const autoConversationActiveRef = useRef(false);
+  const autoTurnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoTurnInProgressRef = useRef(false);
+  const agentsRef = useRef<AgentConfig[]>([]);
+  const conversationModeRef = useRef<ConversationMode>('group');
+  const isLoadingRef = useRef(false);
 
   useEffect(() => {
     // Load agents from localStorage
@@ -44,6 +51,25 @@ const ChatInterface = () => {
       }
     }
   }, [conversationManager]);
+
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
+  useEffect(() => {
+    conversationModeRef.current = conversationMode;
+  }, [conversationMode]);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    return () => {
+      stopAutoConversation({ silent: true });
+      autoTurnInProgressRef.current = false;
+    };
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -80,6 +106,124 @@ const ChatInterface = () => {
     localStorage.setItem("coffeehouse-conversation-mode", mode);
   };
 
+  const clearAutoConversationTimeout = () => {
+    if (autoTurnTimeoutRef.current) {
+      clearTimeout(autoTurnTimeoutRef.current);
+      autoTurnTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleAutoTurn = (delay = 1500) => {
+    if (!autoConversationActiveRef.current) return;
+    clearAutoConversationTimeout();
+    autoTurnTimeoutRef.current = setTimeout(() => {
+      executeAutoTurn();
+    }, delay);
+  };
+
+  const stopAutoConversation = (options?: { silent?: boolean }) => {
+    autoConversationActiveRef.current = false;
+    if (!options?.silent) {
+      setAutoConversationActive(false);
+    }
+    clearAutoConversationTimeout();
+  };
+
+  const executeAutoTurn = async () => {
+    if (!autoConversationActiveRef.current) return;
+    if (autoTurnInProgressRef.current) return;
+    if (isLoadingRef.current) {
+      scheduleAutoTurn(800);
+      return;
+    }
+
+    const currentAgents = agentsRef.current;
+    if (!currentAgents.length) {
+      stopAutoConversation();
+      return;
+    }
+
+    autoTurnInProgressRef.current = true;
+    isLoadingRef.current = true;
+    setIsLoading(true);
+
+    try {
+      if (conversationModeRef.current !== 'group' || recipient !== 'everyone') {
+        conversationManager.switchMode('group');
+        setConversationMode('group');
+        setRecipient('everyone');
+        conversationModeRef.current = 'group';
+        localStorage.setItem("coffeehouse-conversation-mode", 'group');
+      }
+
+      for (let i = 0; i < currentAgents.length; i++) {
+        if (!autoConversationActiveRef.current) {
+          break;
+        }
+
+        const agent = currentAgents[i];
+        const response = await getAgentResponse(agent);
+        const timestamp = Date.now();
+
+        const newMessage: Message = {
+          id: `${timestamp}-${agent.id}-${i}`,
+          sender: agent.id,
+          recipient: "everyone",
+          content: response,
+          timestamp: timestamp + i,
+        };
+        conversationManager.addMessageToMode('group', newMessage);
+        setMessageVersion((prev) => prev + 1);
+        saveConversationState('group');
+
+        if (i < currentAgents.length - 1 && autoConversationActiveRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    } catch (error) {
+      console.error("Auto conversation error:", error);
+    } finally {
+      autoTurnInProgressRef.current = false;
+      isLoadingRef.current = false;
+      setIsLoading(false);
+      if (autoConversationActiveRef.current) {
+        scheduleAutoTurn(1500);
+      }
+    }
+  };
+
+  const startAutoConversation = () => {
+    if (autoConversationActiveRef.current) return;
+    if (!agentsRef.current.length) {
+      toast({
+        title: "No agents configured",
+        description: "Add at least one agent before starting automatic conversation.",
+      });
+      return;
+    }
+
+    autoConversationActiveRef.current = true;
+    setAutoConversationActive(true);
+
+    if (conversationModeRef.current !== 'group' || recipient !== 'everyone') {
+      conversationManager.switchMode('group');
+      setConversationMode('group');
+      setRecipient('everyone');
+      conversationModeRef.current = 'group';
+      localStorage.setItem("coffeehouse-conversation-mode", 'group');
+    }
+
+    scheduleAutoTurn(200);
+  };
+
+  const toggleAutoConversation = () => {
+    if (autoConversationActiveRef.current) {
+      stopAutoConversation();
+    } else {
+      startAutoConversation();
+    }
+  };
+
   const getAgentResponse = async (agent: AgentConfig) => {
     try {
       const agentMessages = conversationManager.getMessagesForAgent(agent.id);
@@ -106,8 +250,13 @@ const ChatInterface = () => {
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
+    if (autoConversationActiveRef.current) {
+      stopAutoConversation();
+    }
+
     const userMessage = input.trim();
     setInput("");
+    isLoadingRef.current = true;
     setIsLoading(true);
 
     // Capture the conversation mode at the time of sending
@@ -165,6 +314,7 @@ const ChatInterface = () => {
       console.error("Error getting AI response:", error);
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
@@ -176,6 +326,10 @@ const ChatInterface = () => {
   };
 
   const handleRecipientChange = (newRecipient: string) => {
+    if (autoConversationActiveRef.current && newRecipient !== 'everyone') {
+      stopAutoConversation();
+    }
+
     setRecipient(newRecipient);
     
     // Switch conversation mode
@@ -184,6 +338,7 @@ const ChatInterface = () => {
     if (newMode !== conversationMode) {
       conversationManager.switchMode(newMode);
       setConversationMode(newMode);
+      conversationModeRef.current = newMode;
       
       // Persist the mode change
       localStorage.setItem("coffeehouse-conversation-mode", newMode);
@@ -197,24 +352,49 @@ const ChatInterface = () => {
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-background via-muted to-secondary">
       {/* Header */}
-      <header className="bg-card border-b border-border shadow-sm p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">☕ AI Coffeehouse</h1>
-          {conversationMode !== 'group' && (
-            <span className="text-sm px-3 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 border border-green-300 dark:border-green-700">
-              Private: {getAgentInfo(conversationMode)?.emoji} {getAgentInfo(conversationMode)?.name}
-            </span>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowSettings(true)}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Settings className="h-5 w-5" />
-        </Button>
-      </header>
+        <header className="bg-card border-b border-border shadow-sm p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">☕ AI Coffeehouse</h1>
+            {conversationMode !== 'group' && (
+              <span className="text-sm px-3 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 border border-green-300 dark:border-green-700">
+                Private: {getAgentInfo(conversationMode)?.emoji} {getAgentInfo(conversationMode)?.name}
+              </span>
+            )}
+            {autoConversationActive && (
+              <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+                Auto conversation running
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={autoConversationActive ? "default" : "outline"}
+              size="sm"
+              onClick={toggleAutoConversation}
+              className="flex items-center gap-2"
+            >
+              {autoConversationActive ? (
+                <>
+                  <Square className="h-4 w-4" />
+                  <span>Stop Auto</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  <span>Start Auto</span>
+                </>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          </div>
+        </header>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
