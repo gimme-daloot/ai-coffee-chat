@@ -183,31 +183,43 @@ const ChatInterface = () => {
         localStorage.setItem("coffeehouse-conversation-mode", 'group');
       }
 
+      // Get all agent responses in parallel (prevents response contamination)
+      const responses = await Promise.all(
+        currentAgents.map(async (agent) => {
+          if (!autoConversationActiveRef.current) {
+            return null;
+          }
+          const response = await getAgentResponse(agent);
+          return { agent, response };
+        })
+      );
+
+      // Add all responses to the conversation
+      const baseTimestamp = Date.now();
       let anyResponses = false;
 
-      for (let i = 0; i < currentAgents.length; i++) {
-        if (!autoConversationActiveRef.current) {
-          break;
+      for (let i = 0; i < responses.length; i++) {
+        const result = responses[i];
+        if (!result || !autoConversationActiveRef.current) {
+          continue;
         }
 
-        const agent = currentAgents[i];
-        const response = await getAgentResponse(agent);
-        const timestamp = Date.now();
-
+        const { agent, response } = result;
         const newMessage: Message = {
-          id: `${timestamp}-${agent.id}-${i}`,
+          id: `${baseTimestamp}-${agent.id}-${i}`,
           sender: agent.id,
           recipient: "everyone",
           content: response,
-          timestamp: timestamp + i,
+          timestamp: baseTimestamp + i,
         };
         conversationManager.addMessageToMode('group', newMessage);
         setMessageVersion((prev) => prev + 1);
         saveConversationState('group');
         anyResponses = true;
 
-        if (i < currentAgents.length - 1 && autoConversationActiveRef.current) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+        // Small delay between adding responses to UI for visual flow
+        if (i < responses.length - 1 && autoConversationActiveRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       }
 
@@ -345,26 +357,35 @@ const ChatInterface = () => {
 
     try {
       if (recipient === "everyone") {
-        // Group conversation mode - agents respond one after another so they can react to each other
-        for (let i = 0; i < agents.length; i++) {
-          const agent = agents[i];
-          const response = await getAgentResponse(agent);
-          const timestamp = Date.now();
+        // Group conversation mode - agents respond in parallel
+        // IMPORTANT: Get all responses BEFORE adding any to the conversation
+        // This prevents later agents from seeing earlier agents' responses from the current turn
+        const responses = await Promise.all(
+          agents.map(async (agent) => {
+            const response = await getAgentResponse(agent);
+            return { agent, response };
+          })
+        );
+
+        // Now add all responses to the conversation
+        const baseTimestamp = Date.now();
+        for (let i = 0; i < responses.length; i++) {
+          const { agent, response } = responses[i];
 
           const newMessage: Message = {
-            id: `${timestamp}-${agent.id}-${i}`,
+            id: `${baseTimestamp}-${agent.id}-${i}`,
             sender: agent.id,
             recipient: "everyone",
             content: response,
-            timestamp: timestamp + i, // Slight offset keeps ordering deterministic
+            timestamp: baseTimestamp + i, // Slight offset keeps ordering deterministic
           };
           conversationManager.addMessageToMode(messageConversationMode, newMessage);
           setMessageVersion((prev) => prev + 1);
           saveConversationState(messageConversationMode);
 
-          // Small delay between responses for natural flow (except after the last one)
-          if (i < agents.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
+          // Small delay between adding responses to UI for visual flow
+          if (i < responses.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
           }
         }
       } else {
