@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Bug, Copy, Download, X, GripHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -267,7 +268,7 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
   const recentEvents = events.slice(-20).reverse();
   const recentLogs = consoleLog.slice(-30).reverse();
 
-  return (
+  return createPortal(
     // Wrapper with pointer-events: none allows clicking through to the app
     <div
       style={{
@@ -465,7 +466,8 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
         title="Drag to resize"
       />
     </div>
-    </div>
+    </div>,
+  document.body
   );
 };
 
