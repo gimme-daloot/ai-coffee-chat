@@ -1,21 +1,25 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Settings, Play, Square } from "lucide-react";
+import { Send, Settings, Play, Square, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import MessageBubble from "./MessageBubble";
 import RecipientSelector from "./RecipientSelector";
 import SettingsModal from "./SettingsModal";
+import { DebugPanel } from "./DebugPanel";
 import { useToast } from "@/hooks/use-toast";
 import { AgentConfig, Message } from "@/types/agent";
 import { callAgent, ApiError } from "@/lib/apiClients";
 import { ConversationStateManager, ConversationMode } from "@/lib/conversationStateManager";
+import { debugEvents } from "@/lib/debugEventEmitter";
+import { OrchestratorDecisionEvent, SystemEventEvent } from "@/types/debug";
 
 const ChatInterface = () => {
   const [input, setInput] = useState("");
   const [recipient, setRecipient] = useState<string>("everyone");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
@@ -89,6 +93,7 @@ const ChatInterface = () => {
     };
   }, []);
 
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -157,6 +162,13 @@ const ChatInterface = () => {
     autoConversationActiveRef.current = false;
     if (!options?.silent) {
       setAutoConversationActive(false);
+
+      // Debug event: Auto conversation stopped
+      debugEvents.emit('system_event', {
+        event: 'auto_conversation_stopped',
+        details: `Stopped auto conversation after ${autoRoundCountRef.current} round(s)`,
+        data: { roundCount: autoRoundCountRef.current },
+      } as SystemEventEvent);
     }
     clearAutoConversationTimeout();
   };
@@ -178,6 +190,13 @@ const ChatInterface = () => {
     autoTurnInProgressRef.current = true;
     isLoadingRef.current = true;
     setIsLoading(true);
+
+    // Debug event: Auto conversation turn starting
+    debugEvents.emit('orchestrator_decision', {
+      decision: 'auto_conversation_turn',
+      reason: `Executing auto turn for ${currentAgents.length} agent(s)`,
+      affectedAgents: currentAgents.map(a => a.id),
+    } as OrchestratorDecisionEvent);
 
     try {
       const currentRecipient = recipientRef.current;
@@ -258,6 +277,13 @@ const ChatInterface = () => {
     setAutoConversationActive(true);
     autoRoundCountRef.current = 0;
     setAutoRoundCount(0);
+
+    // Debug event: Auto conversation started
+    debugEvents.emit('system_event', {
+      event: 'auto_conversation_started',
+      details: `Started auto conversation with ${agentsRef.current.length} agent(s)`,
+      data: { agentCount: agentsRef.current.length, roundLimit: autoRoundLimitRef.current },
+    } as SystemEventEvent);
 
     if (conversationModeRef.current !== 'group' || recipient !== 'everyone') {
       conversationManager.switchMode('group');
@@ -358,6 +384,14 @@ const ChatInterface = () => {
       if (recipient === "everyone") {
         // Group conversation mode - get ALL agent responses in parallel FIRST
         // This prevents agents from seeing each other's responses before generating their own
+
+        // Debug event: Orchestrator decision for parallel responses
+        debugEvents.emit('orchestrator_decision', {
+          decision: 'parallel_agent_responses',
+          reason: 'Getting responses from all agents in parallel to prevent cross-contamination',
+          affectedAgents: agents.map(a => a.id),
+        } as OrchestratorDecisionEvent);
+
         const responsePromises = agents.map(async (agent) => {
           const response = await getAgentResponse(agent);
           return { agent, response };
@@ -391,6 +425,13 @@ const ChatInterface = () => {
         // Private conversation mode - only the selected agent responds
         const targetAgent = agents.find((a) => a.id === recipient);
         if (targetAgent) {
+          // Debug event: Orchestrator decision for single agent response
+          debugEvents.emit('orchestrator_decision', {
+            decision: 'single_agent_response',
+            reason: 'Private conversation mode - only selected agent responds',
+            affectedAgents: [targetAgent.id],
+          } as OrchestratorDecisionEvent);
+
           const response = await getAgentResponse(targetAgent);
           const timestamp = Date.now();
 
@@ -429,15 +470,22 @@ const ChatInterface = () => {
 
     setRecipient(newRecipient);
     recipientRef.current = newRecipient;
-    
+
     // Switch conversation mode
     const newMode: ConversationMode = newRecipient === "everyone" ? "group" : newRecipient;
-    
+
     if (newMode !== conversationMode) {
+      // Debug event: Mode switch decision
+      debugEvents.emit('orchestrator_decision', {
+        decision: 'mode_switch',
+        reason: `User switched from ${conversationMode === 'group' ? 'group' : 'private'} to ${newMode === 'group' ? 'group' : 'private'} mode`,
+        context: { from: conversationMode, to: newMode },
+      } as OrchestratorDecisionEvent);
+
       conversationManager.switchMode(newMode);
       setConversationMode(newMode);
       conversationModeRef.current = newMode;
-      
+
       // Persist the mode change
       localStorage.setItem("coffeehouse-conversation-mode", newMode);
     }
@@ -501,8 +549,18 @@ const ChatInterface = () => {
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => setShowDebug(true)}
+              className="text-muted-foreground hover:text-foreground"
+              title="Debug Panel"
+            >
+              <Bug className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setShowSettings(true)}
               className="text-muted-foreground hover:text-foreground"
+              title="Settings"
             >
               <Settings className="h-5 w-5" />
             </Button>
@@ -586,14 +644,23 @@ const ChatInterface = () => {
         </div>
       </div>
 
-      <SettingsModal 
-        open={showSettings} 
+      <SettingsModal
+        open={showSettings}
         onOpenChange={setShowSettings}
         agents={agents}
         onAgentsChange={(newAgents) => {
           setAgents(newAgents);
           localStorage.setItem("coffeehouse-agents", JSON.stringify(newAgents));
         }}
+      />
+
+      <DebugPanel
+        isOpen={showDebug}
+        onClose={() => setShowDebug(false)}
+        agents={agents}
+        conversationManager={conversationManager}
+        conversationMode={conversationMode}
+        messageVersion={messageVersion}
       />
     </div>
   );
