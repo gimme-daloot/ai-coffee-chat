@@ -1,9 +1,12 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { AgentConfig } from "@/types/agent";
-import { ConversationStateManager, ConversationMode } from "@/lib/conversationStateManager";
-import { Copy, Download } from "lucide-react";
+import { useState, useEffect, useRef } from 'react';
+import { Bug, Copy, Download, X, GripHorizontal, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { AgentConfig } from '@/types/agent';
+import { ConversationStateManager, ConversationMode } from '@/lib/conversationStateManager';
+import { debugEvents } from '@/lib/debugEventEmitter';
+import { DebugEvent } from '@/types/debug';
 
 interface DebugPanelProps {
   open: boolean;
@@ -14,60 +17,128 @@ interface DebugPanelProps {
 }
 
 const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversationMode }: DebugPanelProps) => {
+  const [position, setPosition] = useState({ x: 100, y: 100 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [events, setEvents] = useState<DebugEvent[]>([]);
+  const [consoleLog, setConsoleLog] = useState<Array<{type: 'log' | 'error' | 'warn', message: string, timestamp: number}>>([]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Get all conversation modes
-  const allModes = conversationManager.getAvailableModes();
+  // Subscribe to debug events for LIVE updates
+  useEffect(() => {
+    if (!open) return;
 
-  // Get message counts
-  const messageCounts = allModes.map(mode => ({
-    mode,
-    count: conversationManager.getMessages(mode).length
-  }));
+    const unsubscribe = debugEvents.subscribe((event) => {
+      setEvents((prev) => [...prev.slice(-100), event]); // Keep last 100 events
+    });
 
-  // Get recent messages (last 20 across all conversations)
-  const allMessages = allModes.flatMap(mode =>
-    conversationManager.getMessages(mode).map(msg => ({
-      ...msg,
-      conversationMode: mode
-    }))
-  )
-  .sort((a, b) => b.timestamp - a.timestamp)
-  .slice(0, 20);
+    // Load existing events
+    setEvents(debugEvents.getEvents());
 
-  // Get what each agent actually sees
-  const agentViews = agents.map(agent => {
-    const messages = conversationManager.getMessagesForAgent(agent.id);
-    return {
-      agentId: agent.id,
-      agentName: agent.name,
-      agentEmoji: agent.emoji,
-      messageCount: messages.length,
-      messages: messages.slice(-5) // Last 5 messages
+    return unsubscribe;
+  }, [open]);
+
+  // Capture console logs for debugging
+  useEffect(() => {
+    if (!open) return;
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    console.log = (...args) => {
+      originalLog(...args);
+      setConsoleLog(prev => [...prev.slice(-50), {
+        type: 'log',
+        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
+        timestamp: Date.now()
+      }]);
     };
-  });
+
+    console.error = (...args) => {
+      originalError(...args);
+      setConsoleLog(prev => [...prev.slice(-50), {
+        type: 'error',
+        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
+        timestamp: Date.now()
+      }]);
+    };
+
+    console.warn = (...args) => {
+      originalWarn(...args);
+      setConsoleLog(prev => [...prev.slice(-50), {
+        type: 'warn',
+        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
+        timestamp: Date.now()
+      }]);
+    };
+
+    return () => {
+      console.log = originalLog;
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
+  }, [open]);
+
+  // Auto-scroll console
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [consoleLog]);
+
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    setDragOffset({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      setPosition({
+        x: e.clientX - dragOffset.x,
+        y: e.clientY - dragOffset.y,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragOffset]);
 
   const copyToClipboard = () => {
+    const allModes = conversationManager.getAvailableModes();
     const text = `
-=== DEBUG INFO ===
-Current Mode: ${conversationMode}
+=== DEBUG STATE ===
+Mode: ${conversationMode}
 Agents: ${agents.length}
 
 AGENTS:
-${agents.map(a => `- ${a.emoji} ${a.name} (${a.id})`).join('\n')}
+${agents.map(a => `- ${a.emoji} ${a.name} (${a.id}) - ${a.provider}/${a.model}`).join('\n')}
 
-MESSAGE COUNTS:
-${messageCounts.map(m => `- ${m.mode}: ${m.count} messages`).join('\n')}
+CONVERSATIONS:
+${allModes.map(mode => `- ${mode}: ${conversationManager.getMessages(mode).length} messages`).join('\n')}
 
-RECENT MESSAGES:
-${allMessages.map(m => `[${m.conversationMode}] ${m.sender} → ${m.recipient}: ${m.content.substring(0, 50)}...`).join('\n')}
+RECENT EVENTS (${events.length}):
+${events.slice(-20).map(e => `[${new Date(e.timestamp).toLocaleTimeString()}] ${e.type}: ${JSON.stringify(e.data).substring(0, 100)}`).join('\n')}
 
-AGENT VIEWS:
-${agentViews.map(av => `
-${av.agentEmoji} ${av.agentName} sees ${av.messageCount} messages:
-${av.messages.map(m => `  - ${m.sender} → ${m.recipient}: ${m.content.substring(0, 40)}...`).join('\n')}
-`).join('\n')}
+CONSOLE LOGS (${consoleLog.length}):
+${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join('\n')}
     `;
-
     navigator.clipboard.writeText(text);
   };
 
@@ -76,157 +147,181 @@ ${av.messages.map(m => `  - ${m.sender} → ${m.recipient}: ${m.content.substrin
       timestamp: new Date().toISOString(),
       currentMode: conversationMode,
       agents: agents.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, provider: a.provider, model: a.model })),
-      conversations: allModes.map(mode => ({
+      conversations: conversationManager.getAvailableModes().map(mode => ({
         mode,
         messages: conversationManager.getMessages(mode)
       })),
-      agentViews
+      events: events,
+      consoleLogs: consoleLog,
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `coffeehouse-debug-${Date.now()}.json`;
+    a.download = `debug-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>🐛 Debug Panel</DialogTitle>
-        </DialogHeader>
+  if (!open) return null;
 
-        <div className="flex gap-2 mb-4">
-          <Button onClick={copyToClipboard} variant="outline" size="sm">
-            <Copy className="h-4 w-4 mr-2" />
-            Copy
+  const allModes = conversationManager.getAvailableModes();
+  const recentEvents = events.slice(-20).reverse();
+  const recentLogs = consoleLog.slice(-30).reverse();
+
+  return (
+    <div
+      ref={panelRef}
+      style={{
+        position: 'fixed',
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        zIndex: 9999,
+      }}
+      className="w-[900px] h-[600px] bg-gray-950 border border-gray-700 rounded-lg shadow-2xl flex flex-col text-xs font-mono"
+    >
+      {/* Draggable Header */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="flex items-center justify-between p-2 border-b border-gray-800 bg-gray-900 rounded-t-lg cursor-move select-none"
+      >
+        <div className="flex items-center gap-2">
+          <GripHorizontal className="w-4 h-4 text-gray-500" />
+          <Bug className="w-4 h-4 text-red-500" />
+          <span className="font-semibold text-white">DEBUG MONITOR</span>
+          <Badge variant="outline" className="text-[10px]">LIVE</Badge>
+          <span className="text-gray-500 text-[10px]">Mode: {conversationMode}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button onClick={() => setEvents([])} variant="ghost" size="sm" className="h-6 px-2" title="Clear events">
+            <Trash2 className="w-3 h-3" />
           </Button>
-          <Button onClick={downloadJson} variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Download
+          <Button onClick={copyToClipboard} variant="ghost" size="sm" className="h-6 px-2" title="Copy">
+            <Copy className="w-3 h-3" />
+          </Button>
+          <Button onClick={downloadJson} variant="ghost" size="sm" className="h-6 px-2" title="Download JSON">
+            <Download className="w-3 h-3" />
+          </Button>
+          <Button onClick={() => onOpenChange(false)} variant="ghost" size="sm" className="h-6 px-2">
+            <X className="w-3 h-3" />
           </Button>
         </div>
+      </div>
 
-        <ScrollArea className="h-[calc(80vh-120px)]">
-          <div className="space-y-4 pr-4">
+      {/* Content Grid */}
+      <div className="flex-1 grid grid-cols-2 gap-2 p-2 overflow-hidden">
 
-            {/* Current State */}
-            <div className="border rounded-lg p-4 bg-muted/50">
-              <h3 className="font-semibold text-lg mb-2">📊 Current State</h3>
-              <div className="space-y-1 text-sm">
-                <p><strong>Mode:</strong> <code className="bg-background px-2 py-1 rounded">{conversationMode}</code></p>
-                <p><strong>Agents Configured:</strong> {agents.length}</p>
-                <p><strong>Total Conversations:</strong> {allModes.length}</p>
-              </div>
+        {/* Left Column */}
+        <div className="flex flex-col gap-2 overflow-hidden">
+
+          {/* State */}
+          <div className="border border-gray-800 rounded bg-gray-900 p-2">
+            <div className="text-[10px] text-gray-500 mb-1">SYSTEM STATE</div>
+            <div className="space-y-1 text-[11px]">
+              <div className="text-green-400">Agents: {agents.length}</div>
+              <div className="text-blue-400">Conversations: {allModes.length}</div>
+              <div className="text-yellow-400">Total Messages: {allModes.reduce((sum, mode) => sum + conversationManager.getMessages(mode).length, 0)}</div>
             </div>
-
-            {/* Agents */}
-            <div className="border rounded-lg p-4 bg-muted/50">
-              <h3 className="font-semibold text-lg mb-2">🤖 Agents</h3>
-              {agents.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No agents configured</p>
-              ) : (
-                <div className="space-y-2">
-                  {agents.map(agent => (
-                    <div key={agent.id} className="text-sm border-l-2 border-primary pl-3 py-1">
-                      <div><strong>{agent.emoji} {agent.name}</strong></div>
-                      <div className="text-muted-foreground">
-                        ID: <code className="text-xs">{agent.id}</code> |
-                        {agent.provider}/{agent.model}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Message Counts */}
-            <div className="border rounded-lg p-4 bg-muted/50">
-              <h3 className="font-semibold text-lg mb-2">💬 Message Counts by Conversation</h3>
-              {messageCounts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No conversations yet</p>
-              ) : (
-                <div className="space-y-1">
-                  {messageCounts.map(({ mode, count }) => (
-                    <div key={mode} className="text-sm flex justify-between">
-                      <code className="text-xs bg-background px-2 py-1 rounded">{mode}</code>
-                      <span className="font-mono">{count} messages</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Recent Messages */}
-            <div className="border rounded-lg p-4 bg-muted/50">
-              <h3 className="font-semibold text-lg mb-2">📝 Recent Messages (Last 20)</h3>
-              {allMessages.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No messages yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {allMessages.map(msg => {
-                    const agentInfo = agents.find(a => a.id === msg.sender);
-                    return (
-                      <div key={msg.id} className="text-xs border-b pb-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <code className="bg-background px-1 rounded text-[10px]">{msg.conversationMode}</code>
-                          <span className="font-semibold">
-                            {msg.sender === 'user' ? '🧍 You' : `${agentInfo?.emoji} ${agentInfo?.name || msg.sender}`}
-                          </span>
-                          <span className="text-muted-foreground">→</span>
-                          <span>{msg.recipient === 'everyone' ? '☕ Everyone' : msg.recipient}</span>
-                        </div>
-                        <p className="text-muted-foreground pl-4">{msg.content.substring(0, 100)}...</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Agent Memory Views */}
-            <div className="border rounded-lg p-4 bg-muted/50">
-              <h3 className="font-semibold text-lg mb-3">🧠 What Each Agent Sees</h3>
-              {agentViews.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No agents configured</p>
-              ) : (
-                <div className="space-y-4">
-                  {agentViews.map(view => (
-                    <div key={view.agentId} className="border-l-4 border-primary pl-4">
-                      <div className="font-semibold mb-2">
-                        {view.agentEmoji} {view.agentName}
-                        <span className="ml-2 text-sm font-normal text-muted-foreground">
-                          ({view.messageCount} messages)
-                        </span>
-                      </div>
-                      {view.messages.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No messages in memory</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {view.messages.map((msg, idx) => {
-                            const senderInfo = msg.sender === 'user' ? null : agents.find(a => a.id === msg.sender);
-                            return (
-                              <div key={idx} className="text-xs text-muted-foreground">
-                                {msg.sender === 'user' ? '🧍' : senderInfo?.emoji} → {msg.recipient}:
-                                <span className="ml-1">{msg.content.substring(0, 60)}...</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
           </div>
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+
+          {/* Agents */}
+          <div className="border border-gray-800 rounded bg-gray-900 p-2 flex-1 overflow-hidden">
+            <div className="text-[10px] text-gray-500 mb-1">AGENTS</div>
+            <ScrollArea className="h-[calc(100%-20px)]">
+              {agents.map(agent => {
+                const msgs = conversationManager.getMessagesForAgent(agent.id);
+                return (
+                  <div key={agent.id} className="text-[11px] mb-2 border-l-2 border-blue-500 pl-2">
+                    <div className="text-white">{agent.emoji} {agent.name}</div>
+                    <div className="text-gray-500">ID: {agent.id}</div>
+                    <div className="text-gray-500">{agent.provider}/{agent.model}</div>
+                    <div className="text-green-400">{msgs.length} messages in context</div>
+                  </div>
+                );
+              })}
+            </ScrollArea>
+          </div>
+
+          {/* Message Counts */}
+          <div className="border border-gray-800 rounded bg-gray-900 p-2">
+            <div className="text-[10px] text-gray-500 mb-1">MESSAGE COUNTS</div>
+            <ScrollArea className="h-[80px]">
+              {allModes.map(mode => (
+                <div key={mode} className="flex justify-between text-[11px] text-gray-400">
+                  <span>{mode}</span>
+                  <span className="text-green-400">{conversationManager.getMessages(mode).length}</span>
+                </div>
+              ))}
+            </ScrollArea>
+          </div>
+
+        </div>
+
+        {/* Right Column */}
+        <div className="flex flex-col gap-2 overflow-hidden">
+
+          {/* Live Event Feed */}
+          <div className="border border-gray-800 rounded bg-gray-900 p-2 flex-1 overflow-hidden">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] text-gray-500">EVENT STREAM (LIVE)</div>
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="Live updates"></div>
+            </div>
+            <ScrollArea className="h-[calc(100%-20px)]">
+              {recentEvents.map((event, idx) => {
+                const time = new Date(event.timestamp).toLocaleTimeString('en-US', { hour12: false });
+                let color = 'text-gray-400';
+                if (event.type === 'api_request_error') color = 'text-red-400';
+                else if (event.type === 'api_request_success') color = 'text-green-400';
+                else if (event.type === 'message_added') color = 'text-blue-400';
+                else if (event.type === 'orchestrator_decision') color = 'text-yellow-400';
+
+                return (
+                  <div key={idx} className={`text-[10px] mb-1 ${color}`}>
+                    <span className="text-gray-600">[{time}]</span> {event.type}
+                    <div className="text-gray-500 pl-4 truncate">
+                      {typeof event.data === 'object' ? JSON.stringify(event.data).substring(0, 80) : event.data}
+                    </div>
+                  </div>
+                );
+              })}
+              {recentEvents.length === 0 && (
+                <div className="text-gray-600 text-[11px]">No events yet. Interact with the app to see live updates.</div>
+              )}
+            </ScrollArea>
+          </div>
+
+          {/* Console Logs */}
+          <div className="border border-red-900 rounded bg-gray-900 p-2 flex-1 overflow-hidden">
+            <div className="text-[10px] text-red-500 mb-1">CONSOLE / ERRORS</div>
+            <ScrollArea className="h-[calc(100%-20px)]">
+              {recentLogs.map((log, idx) => {
+                let color = 'text-gray-400';
+                if (log.type === 'error') color = 'text-red-400';
+                else if (log.type === 'warn') color = 'text-yellow-400';
+
+                return (
+                  <div key={idx} className={`text-[10px] mb-1 ${color}`}>
+                    <span className="text-gray-600">[{log.type.toUpperCase()}]</span> {log.message}
+                  </div>
+                );
+              })}
+              {recentLogs.length === 0 && (
+                <div className="text-gray-600 text-[11px]">No console output yet.</div>
+              )}
+              <div ref={logEndRef} />
+            </ScrollArea>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Status Bar */}
+      <div className="border-t border-gray-800 bg-gray-900 p-1 text-[10px] text-gray-500 flex justify-between rounded-b-lg">
+        <span>Events: {events.length} | Logs: {consoleLog.length}</span>
+        <span>Drag window to move • Can interact with app while open</span>
+      </div>
+    </div>
   );
 };
 
