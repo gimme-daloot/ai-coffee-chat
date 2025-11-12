@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import MessageBubble from "./MessageBubble";
 import RecipientSelector from "./RecipientSelector";
 import SettingsModal from "./SettingsModal";
-import { DebugPanel } from "./DebugPanel";
+import DebugPanel from "./DebugPanel";
 import { useToast } from "@/hooks/use-toast";
 import { AgentConfig, Message } from "@/types/agent";
 import { callAgent, ApiError } from "@/lib/apiClients";
@@ -655,12 +655,11 @@ const ChatInterface = () => {
       />
 
       <DebugPanel
-        isOpen={showDebug}
-        onClose={() => setShowDebug(false)}
+        open={showDebug}
+        onOpenChange={setShowDebug}
         agents={agents}
         conversationManager={conversationManager}
         conversationMode={conversationMode}
-        messageVersion={messageVersion}
       />
     </div>
   );
