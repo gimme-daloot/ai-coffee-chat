@@ -1,13 +1,6 @@
-import { useMemo } from 'react';
-import { Bug, Copy, Download } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { Bug, Copy, Download, X, GripHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +26,10 @@ export function DebugPanel({
   messageVersion,
 }: DebugPanelProps) {
   const { toast } = useToast();
+  const [position, setPosition] = useState({ x: 100, y: 100 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Get all messages across all conversations
   const allMessages = useMemo(() => {
@@ -178,202 +175,251 @@ export function DebugPanel({
     });
   };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Bug className="w-5 h-5" />
-            Debug Panel
-          </DialogTitle>
-          <DialogDescription>
-            Diagnostic information for troubleshooting conversation state and agent memory
-          </DialogDescription>
-        </DialogHeader>
+  // Drag handlers
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Only left click
+    setIsDragging(true);
+    setDragOffset({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    });
+  };
 
-        <div className="flex gap-2 mb-4">
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      setPosition({
+        x: e.clientX - dragOffset.x,
+        y: e.clientY - dragOffset.y,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragOffset]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      ref={panelRef}
+      style={{
+        position: 'fixed',
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        zIndex: 9999,
+      }}
+      className="w-[800px] max-h-[80vh] bg-background border border-border rounded-lg shadow-2xl flex flex-col"
+    >
+      {/* Draggable Header */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="flex items-center justify-between p-4 border-b border-border bg-muted/50 rounded-t-lg cursor-move select-none"
+      >
+        <div className="flex items-center gap-2">
+          <GripHorizontal className="w-4 h-4 text-muted-foreground" />
+          <Bug className="w-5 h-5" />
+          <h2 className="font-semibold">Debug Panel</h2>
+          <Badge variant="outline" className="text-xs">Draggable</Badge>
+        </div>
+        <div className="flex items-center gap-2">
           <Button onClick={handleCopyToClipboard} variant="outline" size="sm">
             <Copy className="w-4 h-4 mr-2" />
-            Copy to Clipboard
+            Copy
           </Button>
           <Button onClick={handleDownloadJSON} variant="outline" size="sm">
             <Download className="w-4 h-4 mr-2" />
-            Download JSON
+            JSON
+          </Button>
+          <Button onClick={onClose} variant="ghost" size="icon">
+            <X className="w-4 h-4" />
           </Button>
         </div>
+      </div>
 
-        <ScrollArea className="flex-1 pr-4">
-          <div className="space-y-4">
-            {/* Current Mode */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Current Conversation Mode</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Badge variant="outline" className="text-base">
-                  {conversationMode === 'group'
-                    ? 'Group Chat'
-                    : `Private: ${agents.find((a) => a.id === conversationMode)?.name || conversationMode}`}
-                </Badge>
-              </CardContent>
-            </Card>
+      {/* Scrollable Content */}
+      <ScrollArea className="flex-1 p-4">
+        <div className="space-y-4">
+          {/* Current Mode */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Current Conversation Mode</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Badge variant="outline" className="text-base">
+                {conversationMode === 'group'
+                  ? 'Group Chat'
+                  : `Private: ${agents.find((a) => a.id === conversationMode)?.name || conversationMode}`}
+              </Badge>
+            </CardContent>
+          </Card>
 
-            {/* Agents */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Agents ({agents.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {agents.map((agent) => (
-                    <div
-                      key={agent.id}
-                      className="flex items-start gap-2 p-2 bg-muted rounded-lg text-sm"
-                    >
+          {/* Agents */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Agents ({agents.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {agents.map((agent) => (
+                  <div
+                    key={agent.id}
+                    className="flex items-start gap-2 p-2 bg-muted rounded-lg text-sm"
+                  >
+                    <span className="text-xl">{agent.emoji}</span>
+                    <div className="flex-1">
+                      <div className="font-semibold">{agent.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        ID: {agent.id}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {agent.provider} / {agent.model}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Message Counts */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Message Counts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {Object.entries(messageCounts).map(([mode, count]) => {
+                  const label =
+                    mode === 'group'
+                      ? 'Group Chat'
+                      : agents.find((a) => a.id === mode)?.name || mode;
+                  return (
+                    <div key={mode} className="flex justify-between text-sm">
+                      <span>{label}</span>
+                      <Badge variant="secondary">{count}</Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Last 10 Messages */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Last 10 Messages (All Conversations)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {allMessages.map((msg) => {
+                  const sender =
+                    msg.sender === 'user'
+                      ? 'User'
+                      : agents.find((a) => a.id === msg.sender)?.name || msg.sender;
+                  const recipient =
+                    msg.recipient === 'everyone'
+                      ? 'Everyone'
+                      : agents.find((a) => a.id === msg.recipient)?.name || msg.recipient;
+                  const conversation =
+                    msg.conversation === 'group'
+                      ? 'Group'
+                      : agents.find((a) => a.id === msg.conversation)?.name || msg.conversation;
+                  const preview =
+                    msg.content.substring(0, 50) + (msg.content.length > 50 ? '...' : '');
+
+                  return (
+                    <div key={msg.id} className="p-2 bg-muted rounded-lg text-sm space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{formatTimestamp(msg.timestamp)}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {conversation}
+                        </Badge>
+                      </div>
+                      <div className="font-medium">
+                        {sender} → {recipient}
+                      </div>
+                      <div className="text-muted-foreground">{preview}</div>
+                    </div>
+                  );
+                })}
+                {allMessages.length === 0 && (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    No messages yet
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Agent Memory Views */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Agent Memory Views</CardTitle>
+              <CardDescription>
+                What each agent sees via getMessagesForAgent()
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {agentMemoryViews.map(({ agent, totalMessages, lastMessages }) => (
+                  <div key={agent.id} className="border rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
                       <span className="text-xl">{agent.emoji}</span>
                       <div className="flex-1">
-                        <div className="font-semibold">{agent.name}</div>
+                        <div className="font-semibold text-sm">{agent.name}</div>
                         <div className="text-xs text-muted-foreground">
-                          ID: {agent.id}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {agent.provider} / {agent.model}
+                          {totalMessages} messages in context
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Message Counts */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Message Counts</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {Object.entries(messageCounts).map(([mode, count]) => {
-                    const label =
-                      mode === 'group'
-                        ? 'Group Chat'
-                        : agents.find((a) => a.id === mode)?.name || mode;
-                    return (
-                      <div key={mode} className="flex justify-between text-sm">
-                        <span>{label}</span>
-                        <Badge variant="secondary">{count}</Badge>
+                    <div className="space-y-2 mt-2">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Last 3 messages:
                       </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Last 10 Messages */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Last 10 Messages (All Conversations)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {allMessages.map((msg) => {
-                    const sender =
-                      msg.sender === 'user'
-                        ? 'User'
-                        : agents.find((a) => a.id === msg.sender)?.name || msg.sender;
-                    const recipient =
-                      msg.recipient === 'everyone'
-                        ? 'Everyone'
-                        : agents.find((a) => a.id === msg.recipient)?.name || msg.recipient;
-                    const conversation =
-                      msg.conversation === 'group'
-                        ? 'Group'
-                        : agents.find((a) => a.id === msg.conversation)?.name || msg.conversation;
-                    const preview =
-                      msg.content.substring(0, 50) + (msg.content.length > 50 ? '...' : '');
-
-                    return (
-                      <div key={msg.id} className="p-2 bg-muted rounded-lg text-sm space-y-1">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{formatTimestamp(msg.timestamp)}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {conversation}
-                          </Badge>
-                        </div>
-                        <div className="font-medium">
-                          {sender} → {recipient}
-                        </div>
-                        <div className="text-muted-foreground">{preview}</div>
-                      </div>
-                    );
-                  })}
-                  {allMessages.length === 0 && (
-                    <div className="text-sm text-muted-foreground text-center py-4">
-                      No messages yet
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Agent Memory Views */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Agent Memory Views</CardTitle>
-                <CardDescription>
-                  What each agent sees via getMessagesForAgent()
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {agentMemoryViews.map(({ agent, totalMessages, lastMessages }) => (
-                    <div key={agent.id} className="border rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl">{agent.emoji}</span>
-                        <div className="flex-1">
-                          <div className="font-semibold text-sm">{agent.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {totalMessages} messages in context
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-2 mt-2">
-                        <div className="text-xs font-medium text-muted-foreground">
-                          Last 3 messages:
-                        </div>
-                        {lastMessages.map((msg) => {
-                          const sender =
-                            msg.sender === 'user'
-                              ? 'User'
-                              : agents.find((a) => a.id === msg.sender)?.name || msg.sender;
-                          const preview =
-                            msg.content.substring(0, 40) + (msg.content.length > 40 ? '...' : '');
-                          return (
-                            <div
-                              key={msg.id}
-                              className="text-xs bg-muted/50 rounded p-2 space-y-1"
-                            >
-                              <div className="text-muted-foreground">
-                                [{formatTimestamp(msg.timestamp)}] {sender}
-                              </div>
-                              <div>{preview}</div>
+                      {lastMessages.map((msg) => {
+                        const sender =
+                          msg.sender === 'user'
+                            ? 'User'
+                            : agents.find((a) => a.id === msg.sender)?.name || msg.sender;
+                        const preview =
+                          msg.content.substring(0, 40) + (msg.content.length > 40 ? '...' : '');
+                        return (
+                          <div
+                            key={msg.id}
+                            className="text-xs bg-muted/50 rounded p-2 space-y-1"
+                          >
+                            <div className="text-muted-foreground">
+                              [{formatTimestamp(msg.timestamp)}] {sender}
                             </div>
-                          );
-                        })}
-                        {lastMessages.length === 0 && (
-                          <div className="text-xs text-muted-foreground italic">
-                            No messages yet
+                            <div>{preview}</div>
                           </div>
-                        )}
-                      </div>
+                        );
+                      })}
+                      {lastMessages.length === 0 && (
+                        <div className="text-xs text-muted-foreground italic">
+                          No messages yet
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
