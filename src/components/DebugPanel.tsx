@@ -27,16 +27,20 @@ const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversat
 
   // Subscribe to debug events for LIVE updates
   useEffect(() => {
-    if (!open) return;
+    if (!open || !debugEvents) return;
 
-    const unsubscribe = debugEvents.subscribe((event) => {
-      setEvents((prev) => [...prev.slice(-100), event]); // Keep last 100 events
-    });
+    try {
+      const unsubscribe = debugEvents.subscribe((event) => {
+        setEvents((prev) => [...prev.slice(-100), event]); // Keep last 100 events
+      });
 
-    // Load existing events
-    setEvents(debugEvents.getEvents());
+      // Load existing events
+      setEvents(debugEvents.getEvents());
 
-    return unsubscribe;
+      return unsubscribe;
+    } catch (error) {
+      console.error('Failed to subscribe to debug events:', error);
+    }
   }, [open]);
 
   // Capture console logs for debugging
@@ -47,32 +51,66 @@ const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversat
     const originalError = console.error;
     const originalWarn = console.warn;
 
-    console.log = (...args) => {
-      originalLog(...args);
-      setConsoleLog(prev => [...prev.slice(-50), {
-        type: 'log',
-        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
-        timestamp: Date.now()
-      }]);
-    };
+    try {
+      console.log = (...args) => {
+        originalLog(...args);
+        try {
+          setConsoleLog(prev => [...prev.slice(-50), {
+            type: 'log',
+            message: args.map(a => {
+              try {
+                return typeof a === 'object' ? JSON.stringify(a) : String(a);
+              } catch {
+                return String(a);
+              }
+            }).join(' '),
+            timestamp: Date.now()
+          }]);
+        } catch (e) {
+          // Ignore errors in console capture
+        }
+      };
 
-    console.error = (...args) => {
-      originalError(...args);
-      setConsoleLog(prev => [...prev.slice(-50), {
-        type: 'error',
-        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
-        timestamp: Date.now()
-      }]);
-    };
+      console.error = (...args) => {
+        originalError(...args);
+        try {
+          setConsoleLog(prev => [...prev.slice(-50), {
+            type: 'error',
+            message: args.map(a => {
+              try {
+                return typeof a === 'object' ? JSON.stringify(a) : String(a);
+              } catch {
+                return String(a);
+              }
+            }).join(' '),
+            timestamp: Date.now()
+          }]);
+        } catch (e) {
+          // Ignore errors in console capture
+        }
+      };
 
-    console.warn = (...args) => {
-      originalWarn(...args);
-      setConsoleLog(prev => [...prev.slice(-50), {
-        type: 'warn',
-        message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '),
-        timestamp: Date.now()
-      }]);
-    };
+      console.warn = (...args) => {
+        originalWarn(...args);
+        try {
+          setConsoleLog(prev => [...prev.slice(-50), {
+            type: 'warn',
+            message: args.map(a => {
+              try {
+                return typeof a === 'object' ? JSON.stringify(a) : String(a);
+              } catch {
+                return String(a);
+              }
+            }).join(' '),
+            timestamp: Date.now()
+          }]);
+        } catch (e) {
+          // Ignore errors in console capture
+        }
+      };
+    } catch (error) {
+      console.error('Failed to setup console capture:', error);
+    }
 
     return () => {
       console.log = originalLog;
@@ -83,7 +121,11 @@ const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversat
 
   // Auto-scroll console
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    try {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+      // Ignore scroll errors
+    }
   }, [consoleLog]);
 
   // Drag handlers
@@ -121,8 +163,9 @@ const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversat
   }, [isDragging, dragOffset]);
 
   const copyToClipboard = () => {
-    const allModes = conversationManager.getAvailableModes();
-    const text = `
+    try {
+      const allModes = conversationManager.getAvailableModes();
+      const text = `
 === DEBUG STATE ===
 Mode: ${conversationMode}
 Agents: ${agents.length}
@@ -138,35 +181,48 @@ ${events.slice(-20).map(e => `[${new Date(e.timestamp).toLocaleTimeString()}] ${
 
 CONSOLE LOGS (${consoleLog.length}):
 ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join('\n')}
-    `;
-    navigator.clipboard.writeText(text);
+      `;
+      navigator.clipboard.writeText(text);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+    }
   };
 
   const downloadJson = () => {
-    const data = {
-      timestamp: new Date().toISOString(),
-      currentMode: conversationMode,
-      agents: agents.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, provider: a.provider, model: a.model })),
-      conversations: conversationManager.getAvailableModes().map(mode => ({
-        mode,
-        messages: conversationManager.getMessages(mode)
-      })),
-      events: events,
-      consoleLogs: consoleLog,
-    };
+    try {
+      const data = {
+        timestamp: new Date().toISOString(),
+        currentMode: conversationMode,
+        agents: agents.map(a => ({ id: a.id, name: a.name, emoji: a.emoji, provider: a.provider, model: a.model })),
+        conversations: conversationManager.getAvailableModes().map(mode => ({
+          mode,
+          messages: conversationManager.getMessages(mode)
+        })),
+        events: events,
+        consoleLogs: consoleLog,
+      };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `debug-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `debug-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download JSON:', error);
+    }
   };
 
   if (!open) return null;
 
-  const allModes = conversationManager.getAvailableModes();
+  let allModes: string[] = [];
+  try {
+    allModes = conversationManager.getAvailableModes();
+  } catch (error) {
+    console.error('Failed to get conversation modes:', error);
+  }
+
   const recentEvents = events.slice(-20).reverse();
   const recentLogs = consoleLog.slice(-30).reverse();
 
@@ -219,9 +275,15 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
           <div className="border border-gray-800 rounded bg-gray-900 p-2">
             <div className="text-[10px] text-gray-500 mb-1">SYSTEM STATE</div>
             <div className="space-y-1 text-[11px]">
-              <div className="text-green-400">Agents: {agents.length}</div>
+              <div className="text-green-400">Agents: {agents?.length || 0}</div>
               <div className="text-blue-400">Conversations: {allModes.length}</div>
-              <div className="text-yellow-400">Total Messages: {allModes.reduce((sum, mode) => sum + conversationManager.getMessages(mode).length, 0)}</div>
+              <div className="text-yellow-400">Total Messages: {allModes.reduce((sum, mode) => {
+                try {
+                  return sum + conversationManager.getMessages(mode).length;
+                } catch {
+                  return sum;
+                }
+              }, 0)}</div>
             </div>
           </div>
 
@@ -229,8 +291,13 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
           <div className="border border-gray-800 rounded bg-gray-900 p-2 flex-1 overflow-hidden">
             <div className="text-[10px] text-gray-500 mb-1">AGENTS</div>
             <ScrollArea className="h-[calc(100%-20px)]">
-              {agents.map(agent => {
-                const msgs = conversationManager.getMessagesForAgent(agent.id);
+              {agents && agents.length > 0 ? agents.map(agent => {
+                let msgs = [];
+                try {
+                  msgs = conversationManager.getMessagesForAgent(agent.id);
+                } catch (error) {
+                  console.error('Failed to get messages for agent:', error);
+                }
                 return (
                   <div key={agent.id} className="text-[11px] mb-2 border-l-2 border-blue-500 pl-2">
                     <div className="text-white">{agent.emoji} {agent.name}</div>
@@ -239,7 +306,7 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
                     <div className="text-green-400">{msgs.length} messages in context</div>
                   </div>
                 );
-              })}
+              }) : <div className="text-gray-500 text-[11px]">No agents configured</div>}
             </ScrollArea>
           </div>
 
@@ -247,12 +314,20 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
           <div className="border border-gray-800 rounded bg-gray-900 p-2">
             <div className="text-[10px] text-gray-500 mb-1">MESSAGE COUNTS</div>
             <ScrollArea className="h-[80px]">
-              {allModes.map(mode => (
-                <div key={mode} className="flex justify-between text-[11px] text-gray-400">
-                  <span>{mode}</span>
-                  <span className="text-green-400">{conversationManager.getMessages(mode).length}</span>
-                </div>
-              ))}
+              {allModes.length > 0 ? allModes.map(mode => {
+                let count = 0;
+                try {
+                  count = conversationManager.getMessages(mode).length;
+                } catch (error) {
+                  console.error('Failed to get message count:', error);
+                }
+                return (
+                  <div key={mode} className="flex justify-between text-[11px] text-gray-400">
+                    <span>{mode}</span>
+                    <span className="text-green-400">{count}</span>
+                  </div>
+                );
+              }) : <div className="text-gray-500 text-[11px]">No conversations yet</div>}
             </ScrollArea>
           </div>
 
@@ -268,7 +343,7 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="Live updates"></div>
             </div>
             <ScrollArea className="h-[calc(100%-20px)]">
-              {recentEvents.map((event, idx) => {
+              {recentEvents.length > 0 ? recentEvents.map((event, idx) => {
                 const time = new Date(event.timestamp).toLocaleTimeString('en-US', { hour12: false });
                 let color = 'text-gray-400';
                 if (event.type === 'api_request_error') color = 'text-red-400';
@@ -276,16 +351,20 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
                 else if (event.type === 'message_added') color = 'text-blue-400';
                 else if (event.type === 'orchestrator_decision') color = 'text-yellow-400';
 
+                let dataStr = '';
+                try {
+                  dataStr = typeof event.data === 'object' ? JSON.stringify(event.data).substring(0, 80) : String(event.data);
+                } catch {
+                  dataStr = '[Complex object]';
+                }
+
                 return (
                   <div key={idx} className={`text-[10px] mb-1 ${color}`}>
                     <span className="text-gray-600">[{time}]</span> {event.type}
-                    <div className="text-gray-500 pl-4 truncate">
-                      {typeof event.data === 'object' ? JSON.stringify(event.data).substring(0, 80) : event.data}
-                    </div>
+                    <div className="text-gray-500 pl-4 truncate">{dataStr}</div>
                   </div>
                 );
-              })}
-              {recentEvents.length === 0 && (
+              }) : (
                 <div className="text-gray-600 text-[11px]">No events yet. Interact with the app to see live updates.</div>
               )}
             </ScrollArea>
@@ -295,7 +374,7 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
           <div className="border border-red-900 rounded bg-gray-900 p-2 flex-1 overflow-hidden">
             <div className="text-[10px] text-red-500 mb-1">CONSOLE / ERRORS</div>
             <ScrollArea className="h-[calc(100%-20px)]">
-              {recentLogs.map((log, idx) => {
+              {recentLogs.length > 0 ? recentLogs.map((log, idx) => {
                 let color = 'text-gray-400';
                 if (log.type === 'error') color = 'text-red-400';
                 else if (log.type === 'warn') color = 'text-yellow-400';
@@ -305,8 +384,7 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
                     <span className="text-gray-600">[{log.type.toUpperCase()}]</span> {log.message}
                   </div>
                 );
-              })}
-              {recentLogs.length === 0 && (
+              }) : (
                 <div className="text-gray-600 text-[11px]">No console output yet.</div>
               )}
               <div ref={logEndRef} />
