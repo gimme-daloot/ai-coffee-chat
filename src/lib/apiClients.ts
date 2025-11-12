@@ -1,4 +1,10 @@
 import { AgentConfig, Message } from '@/types/agent';
+import { debugEvents } from './debugEventEmitter';
+import {
+  ApiRequestStartEvent,
+  ApiRequestSuccessEvent,
+  ApiRequestErrorEvent,
+} from '@/types/debug';
 
 interface ApiMessage {
   role: 'system' | 'user' | 'assistant';
@@ -351,34 +357,85 @@ export async function callAgent(
   agent: AgentConfig,
   messages: Message[]
 ): Promise<string> {
-  const { enabled: localModeEnabled, baseUrl: localModeBaseUrl } = getLocalModeConfig();
-  if (localModeEnabled && agent.provider !== 'ollama') {
-    // Route all providers through Ollama when local mode is enabled
-    const ollamaAgent: AgentConfig = {
-      ...agent,
-      provider: 'ollama',
-      // If user set agent-specific baseUrl, prefer it; otherwise use global local mode baseUrl
-      baseUrl: agent.baseUrl || localModeBaseUrl,
-      // Model can remain as-is; Ollama will error if unsupported. Prefer a common default.
-      model: (typeof agent.model === 'string' ? agent.model : 'llama3') as any,
-      apiKey: '',
-    };
-    return callOllama(ollamaAgent, messages);
-  }
-  switch (agent.provider) {
-    case 'openai':
-      return callOpenAI(agent, messages);
-    case 'anthropic':
-      return callAnthropic(agent, messages);
-    case 'google':
-      return callGoogle(agent, messages);
-    case 'xai':
-      return callXAI(agent, messages);
-    case 'ollama':
-      return callOllama(agent, messages);
-    case 'huggingface':
-      return callHuggingFace(agent, messages);
-    default:
-      throw new ApiError(`Unsupported provider: ${agent.provider}`);
+  const requestId = `${agent.id}-${Date.now()}`;
+  const startTime = Date.now();
+
+  // Debug event: API request start
+  debugEvents.emit('api_request_start', {
+    requestId,
+    agentId: agent.id,
+    agentName: agent.name,
+    provider: agent.provider,
+    model: agent.model,
+    messageCount: messages.length,
+  } as ApiRequestStartEvent);
+
+  try {
+    let result: string;
+
+    const { enabled: localModeEnabled, baseUrl: localModeBaseUrl } = getLocalModeConfig();
+    if (localModeEnabled && agent.provider !== 'ollama') {
+      // Route all providers through Ollama when local mode is enabled
+      const ollamaAgent: AgentConfig = {
+        ...agent,
+        provider: 'ollama',
+        // If user set agent-specific baseUrl, prefer it; otherwise use global local mode baseUrl
+        baseUrl: agent.baseUrl || localModeBaseUrl,
+        // Model can remain as-is; Ollama will error if unsupported. Prefer a common default.
+        model: (typeof agent.model === 'string' ? agent.model : 'llama3') as any,
+        apiKey: '',
+      };
+      result = await callOllama(ollamaAgent, messages);
+    } else {
+      switch (agent.provider) {
+        case 'openai':
+          result = await callOpenAI(agent, messages);
+          break;
+        case 'anthropic':
+          result = await callAnthropic(agent, messages);
+          break;
+        case 'google':
+          result = await callGoogle(agent, messages);
+          break;
+        case 'xai':
+          result = await callXAI(agent, messages);
+          break;
+        case 'ollama':
+          result = await callOllama(agent, messages);
+          break;
+        case 'huggingface':
+          result = await callHuggingFace(agent, messages);
+          break;
+        default:
+          throw new ApiError(`Unsupported provider: ${agent.provider}`);
+      }
+    }
+
+    const responseTime = Date.now() - startTime;
+
+    // Debug event: API request success
+    debugEvents.emit('api_request_success', {
+      requestId,
+      agentId: agent.id,
+      agentName: agent.name,
+      responseTime,
+      // Note: Token usage not available from all providers
+      tokenUsage: undefined,
+    } as ApiRequestSuccessEvent);
+
+    return result;
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+
+    // Debug event: API request error
+    debugEvents.emit('api_request_error', {
+      requestId,
+      agentId: agent.id,
+      agentName: agent.name,
+      error: error instanceof Error ? error.message : String(error),
+      responseTime,
+    } as ApiRequestErrorEvent);
+
+    throw error;
   }
 }

@@ -1,4 +1,6 @@
 import { Message } from '@/types/agent';
+import { debugEvents } from './debugEventEmitter';
+import { MessageAddedEvent, MemoryOperationEvent } from '@/types/debug';
 
 export type ConversationMode = 'group' | string; // 'group' or agentId for private
 
@@ -30,7 +32,15 @@ export class ConversationStateManager {
       // Initialize new conversation
       this.conversationStates.set(mode, []);
     }
+    const previousMode = this.currentMode;
     this.currentMode = mode;
+
+    // Debug event
+    debugEvents.emit('memory_operation', {
+      operation: 'switch_mode',
+      mode: mode === 'group' ? 'group' : 'private',
+      details: `Switched from ${previousMode} to ${mode}`,
+    } as MemoryOperationEvent);
   }
 
   /**
@@ -61,6 +71,16 @@ export class ConversationStateManager {
     const messages = this.conversationStates.get(this.currentMode) || [];
     messages.push(message);
     this.conversationStates.set(this.currentMode, messages);
+
+    // Debug event
+    debugEvents.emit('message_added', {
+      messageId: message.id,
+      sender: message.sender,
+      recipient: message.recipient,
+      content: message.content,
+      mode: this.currentMode === 'group' ? 'group' : 'private',
+      preview: message.content.substring(0, 50) + (message.content.length > 50 ? '...' : ''),
+    } as MessageAddedEvent);
   }
 
   /**
@@ -70,6 +90,16 @@ export class ConversationStateManager {
     const messages = this.conversationStates.get(mode) || [];
     messages.push(message);
     this.conversationStates.set(mode, messages);
+
+    // Debug event
+    debugEvents.emit('message_added', {
+      messageId: message.id,
+      sender: message.sender,
+      recipient: message.recipient,
+      content: message.content,
+      mode: mode === 'group' ? 'group' : 'private',
+      preview: message.content.substring(0, 50) + (message.content.length > 50 ? '...' : ''),
+    } as MessageAddedEvent);
   }
 
   /**
@@ -111,6 +141,12 @@ export class ConversationStateManager {
     this.conversationStates.clear();
     this.conversationStates.set('group', []);
     this.currentMode = 'group';
+
+    // Debug event
+    debugEvents.emit('memory_operation', {
+      operation: 'clear',
+      details: 'Cleared all conversation states',
+    } as MemoryOperationEvent);
   }
 
   /**
@@ -118,6 +154,13 @@ export class ConversationStateManager {
    */
   clearConversation(mode: ConversationMode): void {
     this.conversationStates.set(mode, []);
+
+    // Debug event
+    debugEvents.emit('memory_operation', {
+      operation: 'clear',
+      mode: mode === 'group' ? 'group' : 'private',
+      details: `Cleared conversation for ${mode}`,
+    } as MemoryOperationEvent);
   }
 
   /**
@@ -128,6 +171,13 @@ export class ConversationStateManager {
     this.conversationStates.forEach((messages, mode) => {
       states[mode] = messages;
     });
+
+    // Debug event
+    debugEvents.emit('memory_operation', {
+      operation: 'export',
+      details: `Exported ${this.conversationStates.size} conversation states`,
+    } as MemoryOperationEvent);
+
     return states;
   }
 
@@ -139,12 +189,18 @@ export class ConversationStateManager {
     Object.entries(states).forEach(([mode, messages]) => {
       this.conversationStates.set(mode, messages);
     });
-    
+
     if (currentMode && this.conversationStates.has(currentMode)) {
       this.currentMode = currentMode;
     } else {
       this.currentMode = 'group';
     }
+
+    // Debug event
+    debugEvents.emit('memory_operation', {
+      operation: 'import',
+      details: `Imported ${Object.keys(states).length} conversation states`,
+    } as MemoryOperationEvent);
   }
 
   /**
@@ -152,5 +208,19 @@ export class ConversationStateManager {
    */
   getAvailableModes(): ConversationMode[] {
     return Array.from(this.conversationStates.keys());
+  }
+
+  /**
+   * Get group messages
+   */
+  getGroupMessages(): Message[] {
+    return this.getMessages('group');
+  }
+
+  /**
+   * Get private messages for a specific agent
+   */
+  getPrivateMessages(agentId: string): Message[] {
+    return this.getMessages(agentId);
   }
 }
