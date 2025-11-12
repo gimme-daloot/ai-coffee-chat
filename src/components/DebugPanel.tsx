@@ -18,12 +18,36 @@ interface DebugPanelProps {
 
 const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversationMode }: DebugPanelProps) => {
   const [position, setPosition] = useState({ x: 100, y: 100 });
+  const [size, setSize] = useState({ width: 900, height: 600 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [events, setEvents] = useState<DebugEvent[]>([]);
   const [consoleLog, setConsoleLog] = useState<Array<{type: 'log' | 'error' | 'warn', message: string, timestamp: number}>>([]);
   const panelRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Load position and size from localStorage
+  useEffect(() => {
+    try {
+      const savedPosition = localStorage.getItem('debugPanelPosition');
+      const savedSize = localStorage.getItem('debugPanelSize');
+      if (savedPosition) setPosition(JSON.parse(savedPosition));
+      if (savedSize) setSize(JSON.parse(savedSize));
+    } catch (error) {
+      console.error('Failed to load debug panel position/size:', error);
+    }
+  }, []);
+
+  // Save position and size to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('debugPanelPosition', JSON.stringify(position));
+      localStorage.setItem('debugPanelSize', JSON.stringify(size));
+    } catch (error) {
+      console.error('Failed to save debug panel position/size:', error);
+    }
+  }, [position, size]);
 
   // Subscribe to debug events for LIVE updates
   useEffect(() => {
@@ -140,18 +164,28 @@ const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversat
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      setPosition({
-        x: e.clientX - dragOffset.x,
-        y: e.clientY - dragOffset.y,
-      });
+      if (isDragging) {
+        // Allow panel to move anywhere - even to other monitors (negative coordinates OK)
+        setPosition({
+          x: e.clientX - dragOffset.x,
+          y: e.clientY - dragOffset.y,
+        });
+      }
+      if (isResizing) {
+        // Resize from bottom-right corner
+        setSize({
+          width: Math.max(400, e.clientX - position.x),
+          height: Math.max(300, e.clientY - position.y),
+        });
+      }
     };
 
     const handleMouseUp = () => {
       setIsDragging(false);
+      setIsResizing(false);
     };
 
-    if (isDragging) {
+    if (isDragging || isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
@@ -160,7 +194,14 @@ const DebugPanel = ({ open, onOpenChange, agents, conversationManager, conversat
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragOffset]);
+  }, [isDragging, isResizing, dragOffset, position.x, position.y]);
+
+  // Resize handler
+  const handleResizeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+  };
 
   const copyToClipboard = () => {
     try {
@@ -227,16 +268,30 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
   const recentLogs = consoleLog.slice(-30).reverse();
 
   return (
+    // Wrapper with pointer-events: none allows clicking through to the app
     <div
-      ref={panelRef}
       style={{
         position: 'fixed',
-        left: `${position.x}px`,
-        top: `${position.y}px`,
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
         zIndex: 9999,
       }}
-      className="w-[900px] h-[600px] bg-gray-950 border border-gray-700 rounded-lg shadow-2xl flex flex-col text-xs font-mono"
     >
+      <div
+        ref={panelRef}
+        style={{
+          position: 'absolute',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          pointerEvents: 'auto', // Panel itself captures events
+        }}
+        className="bg-gray-950 border border-gray-700 rounded-lg shadow-2xl flex flex-col text-xs font-mono"
+      >
       {/* Draggable Header */}
       <div
         onMouseDown={handleMouseDown}
@@ -397,8 +452,19 @@ ${consoleLog.slice(-20).map(l => `[${l.type.toUpperCase()}] ${l.message}`).join(
       {/* Status Bar */}
       <div className="border-t border-gray-800 bg-gray-900 p-1 text-[10px] text-gray-500 flex justify-between rounded-b-lg">
         <span>Events: {events.length} | Logs: {consoleLog.length}</span>
-        <span>Drag window to move • Can interact with app while open</span>
+        <span>Drag window to move • Drag corner to resize • Can interact with app while open</span>
       </div>
+
+      {/* Resize Handle - Bottom Right Corner */}
+      <div
+        onMouseDown={handleResizeMouseDown}
+        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
+        style={{
+          background: 'linear-gradient(135deg, transparent 50%, rgba(156, 163, 175, 0.5) 50%)',
+        }}
+        title="Drag to resize"
+      />
+    </div>
     </div>
   );
 };
