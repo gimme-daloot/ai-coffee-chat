@@ -109,6 +109,13 @@ const ChatInterface = () => {
       content,
       timestamp: Date.now(),
     };
+    console.log('[DEBUG] Adding message:', {
+      sender,
+      recipient,
+      content: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+      currentMode: conversationManager.getCurrentMode(),
+      conversationMode,
+    });
     conversationManager.addMessage(newMessage);
     setMessageVersion((prev) => prev + 1);
 
@@ -303,7 +310,11 @@ const ChatInterface = () => {
 
   const getAgentResponse = async (agent: AgentConfig) => {
     try {
+      console.log('[DEBUG] Getting response for agent:', agent.id);
       const agentMessages = conversationManager.getMessagesForAgent(agent.id);
+      console.log('[DEBUG] Messages available to agent:', agentMessages);
+      console.log('[DEBUG] Message count:', agentMessages.length);
+      console.log('[DEBUG] Last 5 messages:', agentMessages.slice(-5));
       const response = await callAgent(agent, agentMessages);
       return response;
     } catch (error) {
