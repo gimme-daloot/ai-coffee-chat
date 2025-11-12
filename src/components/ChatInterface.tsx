@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Send, Settings, Play, Square } from "lucide-react";
+import { Send, Settings, Play, Square, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ const ChatInterface = () => {
   const [recipient, setRecipient] = useState<string>("everyone");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [conversationManager] = useState(() => new ConversationStateManager());
   const [conversationMode, setConversationMode] = useState<ConversationMode>('group');
@@ -93,18 +93,6 @@ const ChatInterface = () => {
     };
   }, []);
 
-  // Keyboard shortcut for debug panel (Ctrl+Shift+D)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        setShowDebugPanel((prev) => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -561,8 +549,18 @@ const ChatInterface = () => {
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => setShowDebug(true)}
+              className="text-muted-foreground hover:text-foreground"
+              title="Debug Panel"
+            >
+              <Bug className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setShowSettings(true)}
               className="text-muted-foreground hover:text-foreground"
+              title="Settings"
             >
               <Settings className="h-5 w-5" />
             </Button>
@@ -657,10 +655,12 @@ const ChatInterface = () => {
       />
 
       <DebugPanel
-        isOpen={showDebugPanel}
-        onClose={() => setShowDebugPanel(false)}
+        isOpen={showDebug}
+        onClose={() => setShowDebug(false)}
         agents={agents}
-        conversationStateManager={conversationManager}
+        conversationManager={conversationManager}
+        conversationMode={conversationMode}
+        messageVersion={messageVersion}
       />
     </div>
   );
